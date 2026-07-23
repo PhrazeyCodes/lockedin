@@ -23,6 +23,7 @@ export default function Home() {
   const [calOpen, setCalOpen] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null);
   const [nudgers, setNudgers] = useState(null); // names of friends who nudged you today
+  const [activity, setActivity] = useState(null); // new reactions/comments on your posts
 
   useEffect(() => {
     if (!user) return;
@@ -43,6 +44,40 @@ export default function Home() {
         .select("display_name").in("id", data.map((n) => n.from_user));
       setNudgers((profs || []).map((p) => p.display_name).join(", ") || "A friend");
       localStorage.setItem(seenKey, "1");
+    })();
+  }, [user]);
+
+  // "While you were away" popup — new reactions & comments on YOUR posts since last visit
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const SEEN_KEY = "lockedin_v1:activityseen";
+      const lastSeen = localStorage.getItem(SEEN_KEY);
+      const now = new Date().toISOString();
+      if (!lastSeen) { localStorage.setItem(SEEN_KEY, now); return; } // first run: don't dump history
+      const { data: rx } = await supabase
+        .from("reactions")
+        .select("emoji, comment, user_id, created_at, feed_events!inner(user_id, type)")
+        .eq("feed_events.user_id", user.id)
+        .neq("user_id", user.id)
+        .gt("created_at", lastSeen)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (!rx?.length) { localStorage.setItem(SEEN_KEY, now); return; }
+      const { data: profs } = await supabase.from("profiles")
+        .select("id, display_name").in("id", [...new Set(rx.map((r) => r.user_id))]);
+      const names = Object.fromEntries((profs || []).map((p) => [p.id, p.display_name]));
+      const LABELS = {
+        food: "your nutrition log", lift: "your training session", habits: "your habits",
+        tasks: "your tasks", journal_done: "your journal check", checkin: "your check-in",
+      };
+      setActivity(rx.map((r) => ({
+        who: names[r.user_id] || "A friend",
+        emoji: r.emoji,
+        comment: r.comment,
+        on: LABELS[r.feed_events?.type] || "your post",
+      })));
+      localStorage.setItem(SEEN_KEY, now);
     })();
   }, [user]);
 
@@ -160,6 +195,27 @@ export default function Home() {
 
       <Logger open={loggerOpen} onClose={() => setLoggerOpen(false)}
         onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged ✓"); }} />
+
+      {/* Activity popup: new reactions/comments on your posts */}
+      {activity && !nudgers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setActivity(null)} />
+          <div className="animate-pop relative w-full max-w-xs rounded-3xl bg-white p-5 shadow-xl">
+            <div className="text-center text-3xl">🎉</div>
+            <h2 className="mt-1 text-center text-lg font-bold">While you were away</h2>
+            <div className="mt-3 max-h-60 space-y-1.5 overflow-y-auto">
+              {activity.map((a, i) => (
+                <div key={i} className="rounded-xl bg-gray-50 px-3 py-2 text-sm">
+                  {a.comment
+                    ? <><b>{a.who}</b> commented on {a.on}: <span className="italic text-gray-600">"{a.comment}"</span></>
+                    : <><b>{a.who}</b> reacted {a.emoji} to {a.on}</>}
+                </div>
+              ))}
+            </div>
+            <button className="btn-primary mt-4 w-full" onClick={() => setActivity(null)}>Nice 🔒</button>
+          </div>
+        </div>
+      )}
 
       {/* Nudge popup */}
       {nudgers && (
