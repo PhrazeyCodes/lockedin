@@ -8,6 +8,28 @@ import { showToast } from "@/components/Toast";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Defined OUTSIDE the page component so inputs keep focus while typing —
+// an inline component would be re-created (and remounted) on every keystroke.
+function TargetGrid({ mode, label, targets, setTargets }) {
+  const t = targets[mode];
+  const fields = [["kcal", "kcal"], ["p", "Protein g"], ["c", "Carbs g"], ["f", "Fat g"]];
+  return (
+    <div className="card">
+      <h3 className="mb-2 font-bold">{label}</h3>
+      <div className="grid grid-cols-4 gap-2">
+        {fields.map(([k, lab]) => (
+          <div key={k}>
+            <label className="text-[10px] text-gray-500">{lab}</label>
+            <input className="input px-2 py-2 text-center" type="text" inputMode="numeric"
+              value={t[k]} placeholder="0"
+              onChange={(e) => setTargets({ ...targets, [mode]: { ...t, [k]: e.target.value.replace(/[^0-9]/g, "") } })} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { user, profile, setProfile, loading } = useUser();
   const [targets, setTargets] = useState(null);
@@ -52,26 +74,6 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 1500);
   }
 
-  function TargetGrid({ mode, label }) {
-    const t = targets[mode];
-    const fields = [["kcal", "kcal"], ["p", "Protein g"], ["c", "Carbs g"], ["f", "Fat g"]];
-    return (
-      <div className="card">
-        <h3 className="mb-2 font-bold">{label}</h3>
-        <div className="grid grid-cols-4 gap-2">
-          {fields.map(([k, lab]) => (
-            <div key={k}>
-              <label className="text-[10px] text-gray-500">{lab}</label>
-              <input className="input px-2 py-2 text-center" type="text" inputMode="numeric"
-                value={t[k]} placeholder="0"
-                onChange={(e) => setTargets({ ...targets, [mode]: { ...t, [k]: e.target.value.replace(/[^0-9]/g, "") } })} />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-3 px-4 py-6 pb-16">
       <div className="mb-2 flex items-center justify-between">
@@ -82,8 +84,8 @@ export default function Settings() {
         <div className="text-sm text-gray-500">@{profile.username}</div>
         <div className="font-bold">{profile.display_name}</div>
       </div>
-      <TargetGrid mode="train" label="Training day targets" />
-      <TargetGrid mode="rest" label="Rest day targets" />
+      <TargetGrid mode="train" label="Training day targets" targets={targets} setTargets={setTargets} />
+      <TargetGrid mode="rest" label="Rest day targets" targets={targets} setTargets={setTargets} />
       <div className="card space-y-2">
         <h3 className="font-bold">Goal</h3>
         <input className="input" value={goalText} onChange={(e) => setGoalText(e.target.value)} placeholder='e.g. "Cut to 180"' />
