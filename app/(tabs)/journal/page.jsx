@@ -92,7 +92,11 @@ export default function Journal() {
         {history.map((h) => (
           <button key={h.date} className="card flex w-full items-center gap-3 py-3 text-left active:scale-[0.99]"
             onClick={() => setViewing(h)}>
-            <span className="text-xl">{h.mood || "·"}</span>
+            <span className="text-xl">
+              {(h.am?.mood || h.pm?.mood)
+                ? <>{h.am?.mood && <>🌅{h.am.mood}</>}{h.pm?.mood && <> 🌙{h.pm.mood}</>}</>
+                : (h.mood || "·")}
+            </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold">
                 {new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
@@ -128,13 +132,13 @@ function EntryViewer({ entry, onClose, onEdit }) {
     <Sheet open onClose={onClose}
       title={new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}>
       <div className="mb-3 flex items-center gap-3 text-sm text-gray-500">
-        {entry.mood && <span className="text-2xl">{entry.mood}</span>}
+        {!entry.am?.mood && !entry.pm?.mood && entry.mood && <span className="text-2xl">{entry.mood}</span>}
         {entry.weight && <span>⚖️ {entry.weight} lb</span>}
       </div>
       {entry.am && (
         <div className="mb-3">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-bold">🌅 Morning</h3>
+            <h3 className="font-bold">🌅 Morning {entry.am.mood && <span className="ml-1">{entry.am.mood}</span>}</h3>
             {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("am")}>Edit</button>}
           </div>
           {AM.map(([k, label]) => entry.am[k] && (
@@ -148,7 +152,7 @@ function EntryViewer({ entry, onClose, onEdit }) {
       {entry.pm && (
         <div className="mb-2">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-bold">🌙 Night</h3>
+            <h3 className="font-bold">🌙 Night {entry.pm.mood && <span className="ml-1">{entry.pm.mood}</span>}</h3>
             {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("pm")}>Edit</button>}
           </div>
           {PM.map(([k, label]) => entry.pm[k] && (
@@ -178,7 +182,8 @@ function Flow({ flow, entry, onClose, onSave }) {
   useEffect(() => {
     if (!flow) return;
     setData(entry?.[flow] || {});
-    setMood(entry?.mood || "");
+    // Each flow keeps its own mood (falls back to the old shared column for old entries)
+    setMood(entry?.[flow]?.mood || "");
     setWeight(entry?.weight || "");
   }, [flow, entry]);
 
@@ -215,7 +220,7 @@ function Flow({ flow, entry, onClose, onSave }) {
         <div className="flex gap-2">
           <button className="btn-ghost flex-1" onClick={onClose}>Skip</button>
           <button className="btn-primary flex-1"
-            onClick={() => onSave({ [flow]: data, mood: mood || null, weight: weight ? +weight : null })}>
+            onClick={() => onSave({ [flow]: { ...data, mood: mood || null }, mood: mood || null, weight: weight ? +weight : null })}>
             Save
           </button>
         </div>
