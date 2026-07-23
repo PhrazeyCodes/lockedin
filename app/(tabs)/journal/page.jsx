@@ -145,7 +145,7 @@ function Flow({ flow, entry, onClose, onSave }) {
             ))}
           </div>
           {am && (
-            <input className="input w-28" type="number" inputMode="decimal" placeholder="Weight"
+            <input className="input !w-28 shrink-0" type="number" inputMode="decimal" placeholder="Weight"
               value={weight} onChange={(e) => setWeight(e.target.value)} />
           )}
         </div>

@@ -150,8 +150,8 @@ function Search({ onResult, setError }) {
   return (
     <div className="space-y-3">
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); go(); }}>
-        <input className="input flex-1" placeholder="Search foods…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="btn-primary" disabled={!q.trim() || busy}>{busy ? "…" : "Go"}</button>
+        <input className="input min-w-0 flex-1" placeholder="Search foods…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="btn-primary shrink-0" disabled={!q.trim() || busy}>{busy ? "…" : "Go"}</button>
       </form>
       <div className="max-h-72 space-y-1 overflow-y-auto">
         {results.map((r, i) => (

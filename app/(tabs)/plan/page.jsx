@@ -280,12 +280,12 @@ function Tasks({ day, update }) {
     <div className="flex-1 overflow-y-auto no-scrollbar">
       <div className="mb-2 text-sm text-gray-500">{tasks.length ? `Cleared ${done}/${tasks.length}` : "No tasks yet"}</div>
       <div className="mb-3 flex gap-2">
-        <input className="input flex-1" placeholder="Add a task…" value={title}
+        <input className="input min-w-0 flex-1" placeholder="Add a task…" value={title}
           onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-        <select className="input w-24" value={prio} onChange={(e) => setPrio(e.target.value)}>
+        <select className="input !w-auto shrink-0" value={prio} onChange={(e) => setPrio(e.target.value)}>
           <option value="high">High</option><option value="med">Med</option><option value="low">Low</option>
         </select>
-        <button className="btn-primary" onClick={add}>+</button>
+        <button className="btn-primary shrink-0" onClick={add}>+</button>
       </div>
       <div className="space-y-1.5">
         {tasks.map((t) => (

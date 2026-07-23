@@ -44,9 +44,9 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
       <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Food name" />
       <input className="input" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand (optional)" />
       <div className="flex gap-2">
-        <input className="input flex-1" type="number" inputMode="decimal" value={qty} min={0}
+        <input className="input min-w-0 flex-1" type="number" inputMode="decimal" value={qty} min={0}
           onChange={(e) => setQty(+e.target.value)} />
-        <select className="input w-32" value={unit} onChange={(e) => setUnit(e.target.value)}>
+        <select className="input !w-auto shrink-0" value={unit} onChange={(e) => setUnit(e.target.value)}>
           {initial.per100 && <option value="g">grams</option>}
           <option value="serving">servings</option>
         </select>
