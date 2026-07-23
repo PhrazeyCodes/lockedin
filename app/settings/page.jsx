@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
 import { getUserApiKey, setUserApiKey } from "@/lib/nutrition";
+import { showToast } from "@/components/Toast";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -30,15 +31,24 @@ export default function Settings() {
   if (loading || !targets) return null;
 
   async function save() {
+    // Sanitize: inputs hold raw strings while typing so editing never glitches
+    const clean = {};
+    for (const mode of ["train", "rest"]) {
+      clean[mode] = Object.fromEntries(
+        Object.entries(targets[mode]).map(([k, v]) => [k, Math.max(0, Math.round(+v || 0))])
+      );
+    }
     const patch = {
-      targets,
+      targets: clean,
       goal_text: goalText,
       goal_weight: goalWeight ? +goalWeight : null,
       checkin_day: checkinDay,
     };
     await supabase.from("profiles").update(patch).eq("id", user.id);
     setProfile({ ...profile, ...patch });
+    setTargets(structuredClone(clean));
     setSaved(true);
+    showToast("Settings saved ✓");
     setTimeout(() => setSaved(false), 1500);
   }
 
@@ -52,8 +62,9 @@ export default function Settings() {
           {fields.map(([k, lab]) => (
             <div key={k}>
               <label className="text-[10px] text-gray-500">{lab}</label>
-              <input className="input px-2 py-2 text-center" type="number" inputMode="numeric" value={t[k]}
-                onChange={(e) => setTargets({ ...targets, [mode]: { ...t, [k]: +e.target.value } })} />
+              <input className="input px-2 py-2 text-center" type="text" inputMode="numeric"
+                value={t[k]} placeholder="0"
+                onChange={(e) => setTargets({ ...targets, [mode]: { ...t, [k]: e.target.value.replace(/[^0-9]/g, "") } })} />
             </div>
           ))}
         </div>

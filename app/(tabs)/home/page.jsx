@@ -11,6 +11,7 @@ import Sheet from "@/components/Sheet";
 import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import { supabase } from "@/lib/supabase";
+import { showToast } from "@/components/Toast";
 
 export default function Home() {
   const { user, profile, loading } = useUser();
@@ -21,11 +22,29 @@ export default function Home() {
   const [loggerOpen, setLoggerOpen] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null);
+  const [nudgers, setNudgers] = useState(null); // names of friends who nudged you today
 
   useEffect(() => {
     if (!user) return;
     loadDay(user.id, date).then(setDay);
   }, [user, date]);
+
+  // "You got nudged!" popup — shows once per day when friends have nudged you
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const today = todayStr();
+      const seenKey = `lockedin_v1:nudgeseen:${today}`;
+      if (localStorage.getItem(seenKey)) return;
+      const { data } = await supabase.from("nudges").select("from_user")
+        .eq("to_user", user.id).eq("date", today);
+      if (!data?.length) return;
+      const { data: profs } = await supabase.from("profiles")
+        .select("display_name").in("id", data.map((n) => n.from_user));
+      setNudgers((profs || []).map((p) => p.display_name).join(", ") || "A friend");
+      localStorage.setItem(seenKey, "1");
+    })();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -140,7 +159,21 @@ export default function Home() {
       </button>
 
       <Logger open={loggerOpen} onClose={() => setLoggerOpen(false)}
-        onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); }} />
+        onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged ✓"); }} />
+
+      {/* Nudge popup */}
+      {nudgers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setNudgers(null)} />
+          <div className="animate-pop relative w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-xl">
+            <div className="text-4xl">👀</div>
+            <h2 className="mt-2 text-lg font-bold">You got nudged!</h2>
+            <p className="mt-1 text-sm text-gray-500">{nudgers} noticed you haven't logged anything today.</p>
+            <p className="mt-1 font-semibold text-lock">Time to lock in.</p>
+            <button className="btn-primary mt-4 w-full" onClick={() => setNudgers(null)}>Locking in 🔒</button>
+          </div>
+        </div>
+      )}
 
       <Sheet open={!!editingMeal} onClose={() => setEditingMeal(null)} title="Edit meal">
         {editingMeal && (

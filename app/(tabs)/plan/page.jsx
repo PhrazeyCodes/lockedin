@@ -4,6 +4,8 @@ import { useUser } from "@/lib/useUser";
 import { loadDay, saveDay, syncFeed, blankDay } from "@/lib/store";
 import { todayStr, addDays, fmtDate } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
+import HistoryCalendar from "@/components/HistoryCalendar";
+import { showToast } from "@/components/Toast";
 
 const CATS = {
   Gym: "#14532d", Cardio: "#dc2626", Work: "#2563eb", School: "#7c3aed",
@@ -24,6 +26,7 @@ export default function Plan() {
   const [day, setDay] = useState(blankDay());
   const [editing, setEditing] = useState(null); // block being edited/created
   const [tplOpen, setTplOpen] = useState(false);
+  const [calOpen, setCalOpen] = useState(false);
   const timelineRef = useRef(null);
 
   useEffect(() => {
@@ -80,7 +83,10 @@ export default function Plan() {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex gap-1">
           <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setDate(addDays(date, -1))}>←</button>
-          <span className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold shadow-card">{fmtDate(date)}</span>
+          <button className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold shadow-card active:scale-95"
+            onClick={() => setCalOpen(true)}>
+            {fmtDate(date)} ▾
+          </button>
           <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setDate(addDays(date, 1))}>→</button>
         </div>
         <button className="text-sm font-medium text-lock-light" onClick={() => setTplOpen(true)}>Templates</button>
@@ -148,8 +154,9 @@ export default function Plan() {
             return d;
           });
           setEditing(null);
+          showToast(b.id ? "Block updated ✓" : "Block added ✓");
         }}
-        onDelete={(b) => { update((d) => { d.blocks = d.blocks.filter((x) => x.id !== b.id); return d; }); setEditing(null); }}
+        onDelete={(b) => { update((d) => { d.blocks = d.blocks.filter((x) => x.id !== b.id); return d; }); setEditing(null); showToast("Block deleted ✓"); }}
         onToggle={(b) => { update((d) => { d.blocks = d.blocks.map((x) => (x.id === b.id ? { ...x, done: !x.done } : x)); return d; }); setEditing(null); }} />
 
       <TemplatesSheet open={tplOpen} onClose={() => setTplOpen(false)} day={day}
@@ -159,7 +166,10 @@ export default function Plan() {
             return d;
           });
           setTplOpen(false);
+          showToast(`"${tpl.name}" applied ✓`);
         }} />
+
+      <HistoryCalendar open={calOpen} onClose={() => setCalOpen(false)} uid={user?.id} onPick={setDate} />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { markJournalDone } from "@/lib/store";
 import { todayStr } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
+import HistoryCalendar from "@/components/HistoryCalendar";
+import { showToast } from "@/components/Toast";
 
 const MOODS = ["😞", "😕", "😐", "🙂", "😄"];
 
@@ -14,6 +16,8 @@ export default function Journal() {
   const [history, setHistory] = useState([]);
   const [flow, setFlow] = useState(null); // 'am' | 'pm'
   const [streak, setStreak] = useState(0);
+  const [viewing, setViewing] = useState(null); // past entry being read
+  const [calOpen, setCalOpen] = useState(false);
   const date = todayStr();
 
   async function refresh() {
@@ -39,6 +43,7 @@ export default function Journal() {
     await supabase.from("journal").upsert(row, { onConflict: "user_id,date" });
     await markJournalDone(user.id, date);
     setFlow(null);
+    showToast("Journal saved ✓");
     refresh();
   }
 
@@ -48,7 +53,11 @@ export default function Journal() {
     <div className="px-4 pt-4">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Journal</h1>
-        <span className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card">📓 {streak} day streak</span>
+        <div className="flex items-center gap-2">
+          <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card active:scale-95"
+            onClick={() => setCalOpen(true)}>🗓</button>
+          <span className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card">📓 {streak} day streak</span>
+        </div>
       </div>
 
       <p className="mb-3 rounded-xl bg-gray-100 px-3 py-2 text-[11px] text-gray-500">
@@ -81,9 +90,10 @@ export default function Journal() {
       {!history.length && <p className="py-4 text-center text-sm text-gray-400">No entries yet.</p>}
       <div className="space-y-2">
         {history.map((h) => (
-          <div key={h.date} className="card flex items-center gap-3 py-3">
+          <button key={h.date} className="card flex w-full items-center gap-3 py-3 text-left active:scale-[0.99]"
+            onClick={() => setViewing(h)}>
             <span className="text-xl">{h.mood || "·"}</span>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold">
                 {new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               </div>
@@ -92,12 +102,65 @@ export default function Journal() {
               </div>
             </div>
             {h.am?.focus && <span className="max-w-[40%] truncate text-[11px] text-gray-400">"{h.am.focus}"</span>}
-          </div>
+            <span className="text-gray-300">›</span>
+          </button>
         ))}
       </div>
 
       <Flow flow={flow} entry={entry} onClose={() => setFlow(null)} onSave={save} />
+      <EntryViewer entry={viewing} onClose={() => setViewing(null)}
+        onEdit={viewing?.date === date ? (which) => { setViewing(null); setFlow(which); } : null} />
+      <HistoryCalendar open={calOpen} onClose={() => setCalOpen(false)} uid={user?.id} source="journal"
+        onPick={(d) => {
+          const h = history.find((x) => x.date === d);
+          if (h) setViewing(h);
+          else showToast("No entry that day");
+        }} />
     </div>
+  );
+}
+
+function EntryViewer({ entry, onClose, onEdit }) {
+  if (!entry) return null;
+  const AM = [["intentions", "Intentions"], ["gratitude", "Gratitude"], ["focus", "Focus"]];
+  const PM = [["wins", "Wins"], ["improve", "To improve"], ["thoughts", "Thoughts"]];
+  return (
+    <Sheet open onClose={onClose}
+      title={new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}>
+      <div className="mb-3 flex items-center gap-3 text-sm text-gray-500">
+        {entry.mood && <span className="text-2xl">{entry.mood}</span>}
+        {entry.weight && <span>⚖️ {entry.weight} lb</span>}
+      </div>
+      {entry.am && (
+        <div className="mb-3">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="font-bold">🌅 Morning</h3>
+            {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("am")}>Edit</button>}
+          </div>
+          {AM.map(([k, label]) => entry.am[k] && (
+            <div key={k} className="mb-1.5 rounded-xl bg-gray-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
+              <div className="whitespace-pre-wrap text-sm">{entry.am[k]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {entry.pm && (
+        <div className="mb-2">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="font-bold">🌙 Night</h3>
+            {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("pm")}>Edit</button>}
+          </div>
+          {PM.map(([k, label]) => entry.pm[k] && (
+            <div key={k} className="mb-1.5 rounded-xl bg-gray-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
+              <div className="whitespace-pre-wrap text-sm">{entry.pm[k]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!entry.am && !entry.pm && <p className="py-4 text-center text-sm text-gray-400">Only mood/weight logged that day.</p>}
+    </Sheet>
   );
 }
 

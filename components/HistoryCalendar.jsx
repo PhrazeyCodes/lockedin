@@ -2,15 +2,27 @@
 import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
 import { loadMonth } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { todayStr } from "@/lib/dates";
 
-// Month view with dot markers: amber = food, red = lift, green = habits.
-export default function HistoryCalendar({ open, onClose, uid, onPick }) {
+// Month view with dot markers. source="days": amber = food, red = lift, green = habits.
+// source="journal": purple = journal entry that day.
+export default function HistoryCalendar({ open, onClose, uid, onPick, source = "days" }) {
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const [marks, setMarks] = useState({});
 
   useEffect(() => {
     if (!open || !uid) return;
+    if (source === "journal") {
+      supabase.from("journal").select("date, am, pm")
+        .eq("user_id", uid).gte("date", `${month}-01`).lte("date", `${month}-31`)
+        .then(({ data }) => {
+          const m = {};
+          for (const r of data || []) m[r.date] = { journal: !!(r.am || r.pm) };
+          setMarks(m);
+        });
+      return;
+    }
     loadMonth(uid, month).then((rows) => {
       const m = {};
       for (const r of rows) {
@@ -22,7 +34,7 @@ export default function HistoryCalendar({ open, onClose, uid, onPick }) {
       }
       setMarks(m);
     });
-  }, [open, uid, month]);
+  }, [open, uid, month, source]);
 
   const [y, mo] = month.split("-").map(Number);
   const first = new Date(y, mo - 1, 1);
@@ -59,15 +71,22 @@ export default function HistoryCalendar({ open, onClose, uid, onPick }) {
                 {mk?.food && <i className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
                 {mk?.lift && <i className="h-1.5 w-1.5 rounded-full bg-red-500" />}
                 {mk?.habits && <i className="h-1.5 w-1.5 rounded-full bg-green-500" />}
+                {mk?.journal && <i className="h-1.5 w-1.5 rounded-full bg-purple-500" />}
               </span>
             </button>
           );
         })}
       </div>
       <div className="mt-3 flex justify-center gap-4 text-[11px] text-gray-500">
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-400" />food</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" />lift</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-green-500" />habits</span>
+        {source === "journal" ? (
+          <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-purple-500" />journaled</span>
+        ) : (
+          <>
+            <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-400" />food</span>
+            <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" />lift</span>
+            <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-green-500" />habits</span>
+          </>
+        )}
       </div>
     </Sheet>
   );

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { todayStr, addDays } from "@/lib/dates";
 import { dayScore, gradeFor } from "@/lib/score";
 import Sheet from "@/components/Sheet";
+import { showToast } from "@/components/Toast";
 
 const EMOJIS = ["🔥", "💪", "👑"];
 
@@ -102,10 +103,18 @@ export default function Social() {
   async function nudge(fid) {
     await supabase.from("nudges").insert({ from_user: user.id, to_user: fid, date: today });
     setNudgedToday(new Set([...nudgedToday, fid]));
+    showToast("Nudge sent 👀");
   }
 
-  async function react(eventId, emoji) {
-    await supabase.from("reactions").insert({ event_id: eventId, user_id: user.id, emoji });
+  // One reaction per user per post: tap same = remove, tap different = switch
+  async function react(groupEvents, emoji) {
+    const evIds = groupEvents.map((e) => e.id);
+    const mine = reactions.find((r) => evIds.includes(r.event_id) && r.user_id === user.id && r.emoji);
+    if (mine) {
+      await supabase.from("reactions").delete().eq("id", mine.id);
+      if (mine.emoji === emoji) { refresh(); return; }
+    }
+    await supabase.from("reactions").insert({ event_id: groupEvents[0].id, user_id: user.id, emoji });
     refresh();
   }
 
@@ -129,7 +138,17 @@ export default function Social() {
 
       {/* Leaderboard */}
       <div className="card mb-3">
-        <h3 className="mb-2 font-bold">Locked-In board · this week</h3>
+        <h3 className="font-bold">Locked-In board · this week</h3>
+        <p className="mb-2 mt-0.5 text-[11px] leading-snug text-gray-400">
+          Each day scores 0–100 for showing up: food logged, trained (or rest logged), habits, tasks, journal.
+        </p>
+        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          <span className="w-5" />
+          <span className="flex-1">Friend</span>
+          <span title="Consecutive days with activity">Streak</span>
+          <span className="w-12 text-right" title="Average daily score over the last 7 days">Wk avg</span>
+          <span className="w-6 text-center" title="Letter grade for the weekly average">Grade</span>
+        </div>
         <div className="space-y-1.5">
           {board.map((p, i) => (
             <div key={p.id} className="flex items-center gap-2 text-sm">
@@ -166,8 +185,9 @@ export default function Social() {
           const p = profileMap[uid];
           if (!p) return null;
           const score = dayScore(evs);
-          const firstEvent = evs[0];
-          const myRx = reactions.filter((r) => evs.some((e) => e.id === r.event_id));
+          const evIds = evs.map((e) => e.id);
+          const myRx = reactions.filter((r) => evIds.includes(r.event_id));
+          const myEmoji = myRx.find((r) => r.user_id === user.id && r.emoji)?.emoji;
           return (
             <div key={key} className="card">
               <div className="mb-2 flex items-center justify-between">
@@ -183,15 +203,16 @@ export default function Social() {
               <div className="mt-2 flex items-center gap-1 border-t border-gray-50 pt-2">
                 {EMOJIS.map((em) => {
                   const count = myRx.filter((r) => r.emoji === em).length;
+                  const mine = myEmoji === em;
                   return (
-                    <button key={em} onClick={() => react(firstEvent.id, em)}
-                      className="rounded-full bg-gray-50 px-2.5 py-1 text-sm active:scale-90">
-                      {em}{count > 0 && <span className="ml-1 text-[10px] font-bold text-gray-500">{count}</span>}
+                    <button key={em} onClick={() => react(evs, em)}
+                      className={`rounded-full px-2.5 py-1 text-sm transition active:scale-90 ${mine ? "bg-lock-faint ring-2 ring-lock-light" : "bg-gray-50"}`}>
+                      {em}{count > 0 && <span className={`ml-1 text-[10px] font-bold ${mine ? "text-lock" : "text-gray-500"}`}>{count}</span>}
                     </button>
                   );
                 })}
                 <CommentBox onSend={(text) => supabase.from("reactions")
-                  .insert({ event_id: firstEvent.id, user_id: user.id, comment: text }).then(refresh)} />
+                  .insert({ event_id: evs[0].id, user_id: user.id, comment: text }).then(refresh)} />
               </div>
               {myRx.filter((r) => r.comment).map((r) => (
                 <p key={r.id} className="mt-1 text-[12px] text-gray-500">
@@ -206,13 +227,18 @@ export default function Social() {
       <FriendsSheet open={friendsOpen} onClose={() => setFriendsOpen(false)} me={user?.id}
         friends={friends} pendingIn={pendingIn} onChanged={refresh} myUsername={profile?.username} />
       <CheckinSheet open={checkinOpen} onClose={() => setCheckinOpen(false)} user={user} profile={profile} onPosted={refresh} />
-      <CompareSheet open={compareOpen} onClose={() => setCompareOpen(false)} uid={user?.id} />
+      <CompareSheet open={compareOpen} onClose={() => setCompareOpen(false)} uid={user?.id}
+        onNew={() => { setCompareOpen(false); setCheckinOpen(true); }} />
     </div>
   );
 }
 
 function EventLine({ e, p, photoUrls }) {
   const s = e.summary || {};
+  // Nothing completed → nothing shown (also enforced at write time in lib/store.js)
+  if (e.type === "food" && !s.meals) return null;
+  if (e.type === "habits" && !s.done) return null;
+  if (e.type === "tasks" && !s.done) return null;
   if (e.type === "food")
     return <p>🍽 Logged {s.meals} meal{s.meals !== 1 && "s"} — {s.proteinHit ? "hit protein ✓" : `${s.protein}/${s.proteinTarget}g protein`}, {s.kcal}/{s.kcalTarget} kcal</p>;
   if (e.type === "lift")
@@ -244,10 +270,29 @@ function EventLine({ e, p, photoUrls }) {
 
 function CommentBox({ onSend }) {
   const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
+  function submit(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    onSend(text.trim());
+    setText("");
+    showToast("Comment posted ✓");
+  }
   return (
-    <form className="flex flex-1 gap-1" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { onSend(text.trim()); setText(""); } }}>
-      <input className="w-full flex-1 rounded-full bg-gray-50 px-3 py-1 text-xs outline-none" placeholder="Comment…"
-        value={text} onChange={(e) => setText(e.target.value)} />
+    <form onSubmit={submit}
+      className={`ml-1 flex min-w-0 flex-1 items-center gap-1 rounded-full border px-1.5 py-0.5 transition ${
+        focused ? "border-lock-light bg-white shadow-sm" : "border-transparent bg-gray-50"}`}>
+      <input
+        className="min-w-0 flex-1 bg-transparent px-1.5 py-1 text-xs outline-none placeholder:text-gray-400"
+        placeholder="Add a comment…" value={text}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onChange={(e) => setText(e.target.value)} />
+      {(focused || text) && (
+        <button type="submit" disabled={!text.trim()}
+          className="shrink-0 rounded-full bg-lock px-2.5 py-1 text-[11px] font-bold text-white transition active:scale-90 disabled:opacity-30">
+          Send
+        </button>
+      )}
     </form>
   );
 }
@@ -339,6 +384,7 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
       await supabase.from("feed_events").upsert(
         { user_id: user.id, date, type: "checkin", summary: { weight: weight ? +weight : null, caption, photo_path } },
         { onConflict: "user_id,date,type" });
+      showToast("Check-in posted ✓");
       onPosted();
       onClose();
     } catch (e) { setError(e.message); }
@@ -363,10 +409,12 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
   );
 }
 
-function CompareSheet({ open, onClose, uid }) {
+function CompareSheet({ open, onClose, uid, onNew }) {
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!open || !uid) return;
+    setLoading(true);
     (async () => {
       const { data } = await supabase.from("checkins").select("*").eq("user_id", uid).order("date", { ascending: false });
       const rows = data || [];
@@ -380,18 +428,36 @@ function CompareSheet({ open, onClose, uid }) {
         out.push({ ...r, url });
       }
       setItems(out);
+      setLoading(false);
     })();
   }, [open, uid]);
 
+  const first = items.at(-1);
+  const latest = items[0];
+  const delta = first && latest && first.weight && latest.weight && first.id !== latest.id
+    ? Math.round((latest.weight - first.weight) * 10) / 10 : null;
+
   return (
-    <Sheet open={open} onClose={onClose} title="Your check-ins">
-      {!items.length && <p className="py-4 text-center text-sm text-gray-400">No check-ins yet.</p>}
+    <Sheet open={open} onClose={onClose} title="📸 Progress check-ins">
+      <button className="btn-primary mb-3 w-full" onClick={onNew}>+ New check-in</button>
+      {delta !== null && (
+        <p className="mb-3 rounded-xl bg-lock-faint px-3 py-2 text-center text-sm font-semibold text-lock">
+          {first.weight} lb → {latest.weight} lb ({delta > 0 ? "+" : ""}{delta} lb since {first.date})
+        </p>
+      )}
+      {loading && <p className="py-4 text-center text-sm text-gray-400">Loading…</p>}
+      {!loading && !items.length && (
+        <p className="py-4 text-center text-sm text-gray-400">
+          No check-ins yet — post your first one and watch the side-by-side grow week over week.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         {items.map((c) => (
           <div key={c.id} className="overflow-hidden rounded-xl bg-gray-50">
             {c.url && <img src={c.url} alt="" className="aspect-[3/4] w-full object-cover" />}
             <div className="p-2 text-[11px]">
               <b>{c.weight ? `${c.weight} lb` : "—"}</b> · {c.date}
+              {c.caption && <div className="truncate italic text-gray-400">"{c.caption}"</div>}
             </div>
           </div>
         ))}

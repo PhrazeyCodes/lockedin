@@ -8,8 +8,14 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
   const [brand, setBrand] = useState(initial.brand || "");
   const [qty, setQty] = useState(initial.qty ?? (initial.per100 ? 100 : 1));
   const [unit, setUnit] = useState(initial.unit || (initial.per100 ? "g" : "serving"));
+  // Manual fields hold raw strings — "0" never gets stuck while typing.
   const [manual, setManual] = useState(
-    initial.per100 ? null : { kcal: initial.kcal || 0, p: initial.p || 0, c: initial.c || 0, f: initial.f || 0 }
+    initial.per100 ? null : {
+      kcal: initial.kcal ? String(initial.kcal) : "",
+      p: initial.p ? String(initial.p) : "",
+      c: initial.c ? String(initial.c) : "",
+      f: initial.f ? String(initial.f) : "",
+    }
   );
 
   const scaled = useMemo(() => {
@@ -22,13 +28,16 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
         f: Math.round(initial.per100.f * k * 10) / 10,
       };
     }
-    const base = manual || { kcal: initial.kcal || 0, p: initial.p || 0, c: initial.c || 0, f: initial.f || 0 };
+    const raw = manual || {};
+    const p = +raw.p || 0, c = +raw.c || 0, f = +raw.f || 0;
+    // kcal auto-computes at 4/4/9 until the user types their own value
+    const kcal = raw.kcal === "" || raw.kcal === undefined ? Math.round(p * 4 + c * 4 + f * 9) : +raw.kcal || 0;
     const k = unit === "serving" ? qty || 0 : 1;
     return {
-      kcal: Math.round(base.kcal * k),
-      p: Math.round(base.p * k * 10) / 10,
-      c: Math.round(base.c * k * 10) / 10,
-      f: Math.round(base.f * k * 10) / 10,
+      kcal: Math.round(kcal * k),
+      p: Math.round(p * k * 10) / 10,
+      c: Math.round(c * k * 10) / 10,
+      f: Math.round(f * k * 10) / 10,
     };
   }, [qty, unit, manual, initial]);
 
@@ -55,10 +64,11 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
         {tiles.map((t) => (
           <div key={t.key} className="rounded-xl bg-gray-50 p-2 text-center">
             {manual && unit !== "g" ? (
-              <input type="number" inputMode="decimal"
+              <input type="text" inputMode="decimal"
                 className={`w-full bg-transparent text-center text-lg font-bold outline-none ${t.color}`}
-                value={manual[t.key]}
-                onChange={(e) => setManual({ ...manual, [t.key]: +e.target.value })} />
+                value={t.key === "kcal" && manual.kcal === "" ? "" : manual[t.key]}
+                placeholder={t.key === "kcal" ? String(scaled.kcal || 0) : "0"}
+                onChange={(e) => setManual({ ...manual, [t.key]: e.target.value.replace(/[^0-9.]/g, "") })} />
             ) : (
               <div className={`text-lg font-bold ${t.color}`}>{scaled[t.key]}</div>
             )}
