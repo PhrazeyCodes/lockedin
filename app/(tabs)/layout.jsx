@@ -4,7 +4,7 @@ import BottomNav from "@/components/BottomNav";
 export default function TabsLayout({ children }) {
   return (
     <>
-      <main className="pb-28">{children}</main>
+      <main style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>{children}</main>
       <BottomNav />
     </>
   );

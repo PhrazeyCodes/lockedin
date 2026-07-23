@@ -16,6 +16,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover", // required for env(safe-area-inset-*) on iPhone
   themeColor: "#14532d",
 };
 

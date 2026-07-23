@@ -134,7 +134,8 @@ export default function Home() {
 
       {/* + button */}
       <button onClick={() => setLoggerOpen(true)}
-        className="fixed bottom-24 left-1/2 z-30 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-lock text-3xl font-light text-white shadow-lg active:scale-90">
+        style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
+        className="fixed left-1/2 z-30 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-lock text-3xl font-light text-white shadow-lg active:scale-90">
         +
       </button>
 

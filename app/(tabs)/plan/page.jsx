@@ -75,7 +75,8 @@ export default function Plan() {
   })();
 
   return (
-    <div className="flex h-[calc(100dvh-5.5rem)] flex-col px-4 pt-4">
+    <div className="flex flex-col px-4 pt-4"
+      style={{ height: "calc(100dvh - 5.5rem - env(safe-area-inset-bottom))" }}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex gap-1">
           <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setDate(addDays(date, -1))}>←</button>
@@ -100,12 +101,14 @@ export default function Plan() {
             <span className="text-gray-500">{blocks.length ? `${doneBlocks}/${blocks.length} blocks done` : "No blocks yet — tap a time"}</span>
             <span className="font-bold text-lock">{pct}% executed</span>
           </div>
-          <div ref={timelineRef} className="no-scrollbar relative flex-1 overflow-y-auto rounded-2xl bg-white shadow-card">
+          <div ref={timelineRef}
+            className="no-scrollbar overscroll-contain relative flex-1 overflow-y-auto rounded-2xl bg-white shadow-card"
+            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
             <div className="relative" style={{ height: 24 * HOUR_PX }}>
               {Array.from({ length: 24 }, (_, h) => (
-                <div key={h} className="absolute w-full border-t border-gray-100" style={{ top: h * HOUR_PX }}
+                <div key={h} className="absolute w-full border-t border-gray-100" style={{ top: h * HOUR_PX, height: HOUR_PX }}
                   onClick={() => setEditing({ id: null, title: "", cat: "Gym", start: h * 60, end: h * 60 + 60, note: "" })}>
-                  <span className="ml-1 text-[10px] text-gray-400">{String(h).padStart(2, "0")}:00</span>
+                  <span className="ml-1 text-[10px] text-gray-400">{fmtMin(h * 60)}</span>
                 </div>
               ))}
               {nowMin !== null && (
@@ -162,7 +165,10 @@ export default function Plan() {
 }
 
 function fmtMin(m) {
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const h = Math.floor(m / 60), min = m % 60;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const ampm = h < 12 ? "AM" : "PM";
+  return min === 0 ? `${h12} ${ampm}` : `${h12}:${String(min).padStart(2, "0")} ${ampm}`;
 }
 
 function BlockEditor({ block, onClose, onSave, onDelete, onToggle }) {
@@ -192,7 +198,10 @@ function BlockEditor({ block, onClose, onSave, onDelete, onToggle }) {
           </select>
         </div>
         <input className="input" placeholder="Note (optional)" value={b.note || ""} onChange={(e) => setB({ ...b, note: e.target.value })} />
-        <button className="btn-primary w-full" onClick={() => onSave(b)}>Save</button>
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
+          <button className="btn-primary flex-1" onClick={() => onSave(b)}>Save</button>
+        </div>
         {b.id && (
           <div className="flex gap-2">
             <button className="btn-ghost flex-1" onClick={() => onToggle(b)}>{b.done ? "Mark not done" : "Mark done ✓"}</button>
