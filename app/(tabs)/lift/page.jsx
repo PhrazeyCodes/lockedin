@@ -83,6 +83,102 @@ function buildSession(type) {
   };
 }
 
+function fmtDuration(sec) {
+  const s = +sec || 0;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return h
+    ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+    : `${m}:${String(ss).padStart(2, "0")}`;
+}
+
+// Pace per mile/km, e.g. "8:36 /mi"
+function paceFor(r) {
+  const d = +r.distance, s = +r.duration_sec;
+  if (!d || !s) return null;
+  const per = s / d;
+  return `${Math.floor(per / 60)}:${String(Math.round(per % 60)).padStart(2, "0")} /${r.unit || "mi"}`;
+}
+
+// Log a run: distance, time, optional caption and photos. Posts to the feed as
+// its own card via syncFeed.
+function RunSheet({ open, onClose, uid, date, onSave }) {
+  const [distance, setDistance] = useState("");
+  const [unit, setUnit] = useState("mi");
+  const [mins, setMins] = useState("");
+  const [secs, setSecs] = useState("");
+  const [caption, setCaption] = useState("");
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open) { setDistance(""); setUnit("mi"); setMins(""); setSecs(""); setCaption(""); setFiles([]); setError(""); }
+  }, [open]);
+
+  if (!open) return null;
+
+  const duration_sec = (+mins || 0) * 60 + (+secs || 0);
+  const preview = distance && duration_sec ? paceFor({ distance, duration_sec, unit }) : null;
+
+  async function save() {
+    setBusy(true); setError("");
+    try {
+      const photo_paths = [];
+      for (const [i, f] of files.entries()) {
+        const path = `${uid}/runs/${date}-${Date.now()}-${i}.jpg`;
+        const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
+        if (upErr) throw upErr;
+        photo_paths.push(path);
+      }
+      onSave({
+        distance: +distance || 0, unit, duration_sec,
+        caption: caption.trim() || null, photo_paths, at: new Date().toISOString(),
+      });
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose}
+      title={<span className="flex items-center gap-2"><Icon name="run" className="h-5 w-5" /> Log a run</span>}>
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <input className="input min-w-0 flex-1" type="number" inputMode="decimal" placeholder="Distance"
+            value={distance} onChange={(e) => setDistance(e.target.value)} />
+          <select className="input !w-24 shrink-0" value={unit} onChange={(e) => setUnit(e.target.value)}>
+            <option value="mi">mi</option>
+            <option value="km">km</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <input className="input min-w-0 flex-1" type="number" inputMode="numeric" placeholder="Minutes"
+            value={mins} onChange={(e) => setMins(e.target.value)} />
+          <span className="text-gray-400">:</span>
+          <input className="input min-w-0 flex-1" type="number" inputMode="numeric" placeholder="Seconds"
+            value={secs} onChange={(e) => setSecs(e.target.value)} />
+        </div>
+        {preview && (
+          <p className="rounded-xl bg-lock-faint px-3 py-2 text-center text-sm font-semibold text-lock">
+            {distance} {unit} in {fmtDuration(duration_sec)} · {preview}
+          </p>
+        )}
+        <input className="input" placeholder="Caption (optional)" value={caption}
+          onChange={(e) => setCaption(e.target.value)} />
+        <label className="btn-ghost block w-full cursor-pointer text-center">
+          {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} attached — tap to change` : "Add photos"}
+          <input type="file" accept="image/*" multiple className="hidden"
+            onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+        </label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <p className="text-[11px] text-gray-400">Posts to your friends' feed as its own run card.</p>
+        <button className="btn-primary w-full" disabled={busy || !distance || !duration_sec} onClick={save}>
+          {busy ? "Saving…" : "Log run"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
 export default function Lift() {
   const { user, profile, loading } = useUser();
   const [date, setDate] = useState(todayStr());
@@ -93,6 +189,7 @@ export default function Lift() {
   const [tplSaved, setTplSaved] = useState(false);
   const [customs, setCustoms] = useState([]);
   const [newType, setNewType] = useState("");
+  const [runOpen, setRunOpen] = useState(false);
 
   useEffect(() => { setCustoms(getCustomSessions()); }, []);
 
@@ -123,6 +220,7 @@ export default function Lift() {
   if (loading) return null;
 
   const lift = day.lift;
+  const runs = day.runs || [];
   const dates = weekDates(todayStr());
   const totalSets = lift?.exercises?.reduce((n, e) => n + e.sets.length, 0) || 0;
   const doneSets = lift?.exercises?.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0) || 0;
@@ -130,7 +228,7 @@ export default function Lift() {
   return (
     <div className="px-4 pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Lift</h1>
+        <h1 className="text-2xl font-bold">Activity</h1>
         <button className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold shadow-card active:scale-95"
           onClick={() => setCalOpen(true)}>
           {fmtDate(date)} ▾
@@ -153,7 +251,7 @@ export default function Lift() {
         })}
       </div>
 
-      {!lift?.type && (
+      {!lift?.type && !runs.length && (
         <div className="card text-center">
           <p className="mb-3 text-gray-500">Nothing logged {fmtDate(date).toLowerCase()}.</p>
           <button className="btn-primary w-full" onClick={() => setPickerOpen(true)}>Log a session</button>
@@ -260,6 +358,42 @@ export default function Lift() {
           </button>
         </>
       )}
+
+      {/* Runs */}
+      <div className="card mb-3">
+        <div className="flex items-center justify-between">
+          <h3 className="flex items-center gap-2 font-bold">
+            <Icon name="run" className="h-[18px] w-[18px] text-gray-500" /> Runs
+          </h3>
+          <button className="text-sm font-medium text-lock-light" onClick={() => setRunOpen(true)}>+ Log a run</button>
+        </div>
+        {!runs.length && <p className="mt-2 text-[11px] text-gray-400">No runs logged {fmtDate(date).toLowerCase()}.</p>}
+        <div className="mt-2 space-y-2">
+          {runs.map((r, ri) => (
+            <div key={ri} className="flex items-center gap-3 rounded-xl bg-gray-50 p-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">
+                  {r.distance} {r.unit || "mi"} · {fmtDuration(r.duration_sec)}
+                  {paceFor(r) && <span className="ml-1 font-normal text-gray-500">({paceFor(r)})</span>}
+                </div>
+                {r.caption && <div className="truncate text-[11px] italic text-gray-500">"{r.caption}"</div>}
+                {!!r.photo_paths?.length && (
+                  <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                    <Icon name="image" className="h-3 w-3" /> {r.photo_paths.length} photo{r.photo_paths.length !== 1 && "s"}
+                  </div>
+                )}
+              </div>
+              <button aria-label="Delete run" className="p-1 text-gray-300 active:text-red-400"
+                onClick={() => update((d) => { d.runs = (d.runs || []).filter((_, i) => i !== ri); return d; })}>
+                <Icon name="x" className="h-4 w-4" strokeWidth={2.2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <RunSheet open={runOpen} onClose={() => setRunOpen(false)} uid={user?.id} date={date}
+        onSave={(run) => { update((d) => { d.runs = [...(d.runs || []), run]; return d; }); setRunOpen(false); showToast("Run logged"); }} />
 
       <Sheet open={pickerOpen} onClose={() => setPickerOpen(false)} title="What did you train?">
         <div className="grid grid-cols-2 gap-2">

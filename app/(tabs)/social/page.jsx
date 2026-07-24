@@ -62,7 +62,8 @@ export default function Social() {
           for (const p of cp) if (p) paths.push(p);
         }
         if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
-        if (e.type === "post") for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
+        if (e.type === "post" || e.type === "run")
+          for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
       }
       const urls = {};
       for (const p of paths) {
@@ -105,16 +106,26 @@ export default function Social() {
   const groups = useMemo(() => {
     const g = {};
     for (const e of events) {
-      const kind = e.type === "checkin" ? "checkin" : e.type === "post" ? "post" : "day";
+      const kind = e.type === "checkin" ? "checkin"
+        : e.type === "run" ? "run"
+        : e.type === "post" ? "post" : "day";
       const k = `${e.date}|${e.user_id}|${kind}`;
       (g[k] = g[k] || { key: k, date: e.date, uid: e.user_id, kind, evs: [] }).evs.push(e);
     }
     const out = Object.values(g);
     for (const c of out) c.evs.sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
     // newest date first; within a day: check-in, then custom post, then activity
-    const KIND_ORDER = { checkin: 0, post: 1, day: 2 };
+    const KIND_ORDER = { checkin: 0, run: 1, post: 2, day: 3 };
     return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
   }, [events]); // eslint-disable-line
+
+  // All of a user's events for a date — the day grade counts runs and check-ins
+  // even though those render as separate cards.
+  const dayAll = useMemo(() => {
+    const m = {};
+    for (const e of events) (m[`${e.date}|${e.user_id}`] = m[`${e.date}|${e.user_id}`] || []).push(e);
+    return m;
+  }, [events]);
 
   // leaderboard: weekly avg score + streak of days with any event
   const board = useMemo(() => {
@@ -245,7 +256,7 @@ export default function Social() {
         {groups.map(({ key, date, uid, kind, evs }) => {
           const p = profileMap[uid];
           if (!p) return null;
-          const score = dayScore(evs);
+          const score = dayScore(dayAll[`${date}|${uid}`] || evs);
           const evIds = evs.map((e) => e.id);
           const myRx = reactions.filter((r) => evIds.includes(r.event_id));
           const myEmoji = myRx.find((r) => r.user_id === user.id && r.emoji)?.emoji;
@@ -257,6 +268,11 @@ export default function Social() {
                   {kind === "checkin" && (
                     <span className="rounded-full bg-lock-faint px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-lock">
                       Check-in
+                    </span>
+                  )}
+                  {kind === "run" && (
+                    <span className="flex items-center gap-1 rounded-full bg-lock-faint px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-lock">
+                      <Icon name="run" className="h-3 w-3" /> Run
                     </span>
                   )}
                   {kind === "post" && (
@@ -368,8 +384,44 @@ function PhotoMeta({ caption, at, className = "" }) {
   );
 }
 
+function fmtRunTime(sec) {
+  const t = +sec || 0;
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), ss = t % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+           : `${m}:${String(ss).padStart(2, "0")}`;
+}
+
+function runPace(it) {
+  const d = +it.distance, t = +it.duration_sec;
+  if (!d || !t) return null;
+  const per = t / d;
+  return `${Math.floor(per / 60)}:${String(Math.round(per % 60)).padStart(2, "0")} /${it.unit || "mi"}`;
+}
+
 function EventLine({ e, p, photoUrls, audioUrls = {} }) {
   const s = e.summary || {};
+  if (e.type === "run") {
+    const items = s.items || [];
+    if (!items.length) return null;
+    return (
+      <div className="space-y-3">
+        {items.map((it, i) => {
+          const shots = (it.photo_paths || []).filter((x) => photoUrls[x]).map((x) => ({ url: photoUrls[x] }));
+          return (
+            <div key={i} className={i > 0 ? "border-t border-gray-50 pt-3" : ""}>
+              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <Icon name="run" className="h-4 w-4 text-gray-400" />
+                Ran <b>{it.distance} {it.unit || "mi"}</b> in <b>{fmtRunTime(it.duration_sec)}</b>
+                {runPace(it) && <span className="text-gray-500">· {runPace(it)}</span>}
+              </p>
+              {it.caption && <p className="text-[12px] italic text-gray-600">"{it.caption}"</p>}
+              <PhotoStrip shots={shots} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   if (e.type === "post") {
     const items = s.items || [];
     if (!items.length) return null;
