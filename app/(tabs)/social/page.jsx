@@ -27,6 +27,9 @@ export default function Social() {
   const [myNudges, setMyNudges] = useState([]);       // nudges received today
   const [audioUrls, setAudioUrls] = useState({});     // signed urls for voice memos
   const [composerDate, setComposerDate] = useState(null); // custom post being written/edited
+  const [likes, setLikes] = useState([]);             // {event_id, user_id}
+  const [burst, setBurst] = useState(null);           // card key showing the heart animation
+  const tapRef = useRef({});                          // last tap time per card, for double-tap
 
   async function refresh() {
     const me = user.id;
@@ -52,8 +55,11 @@ export default function Social() {
     setEvents(evs || []);
 
     if (evs?.length) {
-      const { data: rx } = await supabase.from("reactions").select("*").in("event_id", evs.map((e) => e.id));
+      const evIds = evs.map((e) => e.id);
+      const { data: rx } = await supabase.from("reactions").select("*").in("event_id", evIds);
       setReactions(rx || []);
+      const { data: lk } = await supabase.from("likes").select("*").in("event_id", evIds);
+      setLikes(lk || []);
       // signed urls for checkin + photo-update photos
       const paths = [];
       for (const e of evs) {
@@ -153,6 +159,35 @@ export default function Social() {
 
   function onNudgeSent(fid) {
     setNudgedToday(new Set([...nudgedToday, fid]));
+  }
+
+  // Double-tap anywhere on a card to like it. Likes are their own table so they
+  // sit alongside — not instead of — the emoji reactions.
+  async function toggleLike(card, { burstOnly = false } = {}) {
+    const id = card.evs[0].id;
+    const mine = likes.find((l) => l.event_id === id && l.user_id === user.id);
+    if (mine) {
+      if (burstOnly) return;            // double-tapping an already-liked post keeps it liked
+      await supabase.from("likes").delete().eq("event_id", id).eq("user_id", user.id);
+      setLikes(likes.filter((l) => !(l.event_id === id && l.user_id === user.id)));
+      return;
+    }
+    setLikes([...likes, { event_id: id, user_id: user.id }]);
+    setBurst(card.key);
+    setTimeout(() => setBurst((k) => (k === card.key ? null : k)), 700);
+    await supabase.from("likes").insert({ event_id: id, user_id: user.id });
+  }
+
+  function onCardTap(e, card) {
+    // ignore taps that land on a control inside the card
+    if (e.target.closest("button, a, input, textarea, select, label, audio")) return;
+    const now = Date.now();
+    const last = tapRef.current[card.key] || 0;
+    tapRef.current[card.key] = now;
+    if (now - last < 300) {
+      tapRef.current[card.key] = 0;
+      toggleLike(card, { burstOnly: true });
+    }
   }
 
   // One reaction per user per post: tap same = remove, tap different = switch
@@ -256,15 +291,23 @@ export default function Social() {
         </div>
       )}
       <div className="space-y-3">
-        {groups.map(({ key, date, uid, kind, evs }) => {
+        {groups.map((card) => {
+          const { key, date, uid, kind, evs } = card;
           const p = profileMap[uid];
           if (!p) return null;
           const score = dayScore(dayAll[`${date}|${uid}`] || evs);
           const evIds = evs.map((e) => e.id);
           const myRx = reactions.filter((r) => evIds.includes(r.event_id));
           const myEmoji = myRx.find((r) => r.user_id === user.id && r.emoji)?.emoji;
+          const cardLikes = likes.filter((l) => evIds.includes(l.event_id));
+          const iLiked = cardLikes.some((l) => l.user_id === user.id);
           return (
-            <div key={key} className="card">
+            <div key={key} className="card relative select-none" onClick={(e) => onCardTap(e, card)}>
+              {burst === key && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                  <Icon name="heart" filled className="animate-pop h-20 w-20 text-white drop-shadow-lg" />
+                </div>
+              )}
               <div className="mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-2 font-bold">
                   {p.display_name}{uid === user.id && " (you)"}
@@ -306,6 +349,12 @@ export default function Social() {
                 {evs.map((e) => <EventLine key={e.id} e={e} p={p} photoUrls={photoUrls} audioUrls={audioUrls} />)}
               </div>
               <div className="mt-2 flex items-center gap-1 border-t border-gray-50 pt-2">
+                <button aria-label={iLiked ? "Unlike" : "Like"} onClick={() => toggleLike(card)}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 transition active:scale-90 ${
+                    iLiked ? "bg-red-50 text-red-500" : "bg-gray-50 text-gray-500"}`}>
+                  <Icon name="heart" className="h-4 w-4" filled={iLiked} />
+                  {cardLikes.length > 0 && <span className="text-[10px] font-bold">{cardLikes.length}</span>}
+                </button>
                 {EMOJIS.map((em) => {
                   const count = myRx.filter((r) => r.emoji === em).length;
                   const mine = myEmoji === em;

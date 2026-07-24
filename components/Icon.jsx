@@ -46,6 +46,8 @@ const ICONS = {
   mic: ["M12 4.5a2.8 2.8 0 0 1 2.8 2.8v4a2.8 2.8 0 0 1-5.6 0v-4A2.8 2.8 0 0 1 12 4.5Z", "M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5M9 20.5h6"],
   pencil: ["M16.5 4.5l3 3-11 11H5.5v-3z", "M14.5 6.5l3 3"],
   eye: ["M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z", [12, 12, 3]],
+  heart: ["M12 20.5S3.5 15.2 3.5 9.6A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8.5 2.6c0 5.6-8.5 10.9-8.5 10.9Z"],
+  bell: ["M6.5 10a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5S6.5 14 6.5 10Z", "M10.2 19a2 2 0 0 0 3.6 0"],
   lock: ["M6.5 11h11v9.5h-11z", "M8.5 11V8a3.5 3.5 0 0 1 7 0v3"],
   sliders: ["M4 7h9M17 7h3M4 17h3M11 17h9", [15, 7, 2], [9, 17, 2]],
   sparkles: ["M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z", "M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"],
@@ -58,11 +60,11 @@ const ICONS = {
   mood5: [[12, 12, 8.5], [9.2, 9.8, 0.7], [14.8, 9.8, 0.7], "M8 13.4c1.1 2 2.4 3 4 3s2.9-1 4-3z"],
 };
 
-export default function Icon({ name, className = "h-5 w-5", strokeWidth = 1.8 }) {
+export default function Icon({ name, className = "h-5 w-5", strokeWidth = 1.8, filled = false }) {
   const parts = ICONS[name];
   if (!parts) return null;
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+    <svg viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth={strokeWidth}
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
       className={`${className} shrink-0`}>
       {parts.map((p, i) =>

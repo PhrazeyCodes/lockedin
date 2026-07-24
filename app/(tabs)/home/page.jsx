@@ -10,7 +10,8 @@ import FoodEditor from "@/components/FoodEditor";
 import Sheet from "@/components/Sheet";
 import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
-import Icon, { REACTION_ICONS } from "@/components/Icon";
+import Icon from "@/components/Icon";
+import { SEEN_KEY } from "@/lib/notifications";
 import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 
@@ -24,7 +25,7 @@ export default function Home() {
   const [calOpen, setCalOpen] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null);
   const [nudgers, setNudgers] = useState(null); // names of friends who nudged you today
-  const [activity, setActivity] = useState(null); // new reactions/comments on your posts
+  const [unread, setUnread] = useState(0); // notification badge count
 
   useEffect(() => {
     if (!user) return;
@@ -48,37 +49,22 @@ export default function Home() {
     })();
   }, [user]);
 
-  // "While you were away" popup — new reactions & comments on YOUR posts since last visit
+  // Unread badge for the notifications page — likes, reactions and comments on
+  // YOUR posts since you last opened it. No popup: the bell is the entry point.
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const SEEN_KEY = "lockedin_v1:activityseen";
       const lastSeen = localStorage.getItem(SEEN_KEY);
-      const now = new Date().toISOString();
-      if (!lastSeen) { localStorage.setItem(SEEN_KEY, now); return; } // first run: don't dump history
-      const { data: rx } = await supabase
-        .from("reactions")
-        .select("emoji, comment, user_id, created_at, feed_events!inner(user_id, type)")
-        .eq("feed_events.user_id", user.id)
-        .neq("user_id", user.id)
-        .gt("created_at", lastSeen)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      if (!rx?.length) { localStorage.setItem(SEEN_KEY, now); return; }
-      const { data: profs } = await supabase.from("profiles")
-        .select("id, display_name").in("id", [...new Set(rx.map((r) => r.user_id))]);
-      const names = Object.fromEntries((profs || []).map((p) => [p.id, p.display_name]));
-      const LABELS = {
-        food: "your nutrition log", lift: "your training session", habits: "your habits",
-        tasks: "your tasks", journal_done: "your journal check", checkin: "your check-in",
-      };
-      setActivity(rx.map((r) => ({
-        who: names[r.user_id] || "A friend",
-        emoji: r.emoji,
-        comment: r.comment,
-        on: LABELS[r.feed_events?.type] || "your post",
-      })));
-      localStorage.setItem(SEEN_KEY, now);
+      if (!lastSeen) { localStorage.setItem(SEEN_KEY, new Date().toISOString()); return; }
+      const [{ count: rxCount }, { count: likeCount }] = await Promise.all([
+        supabase.from("reactions")
+          .select("id, feed_events!inner(user_id)", { count: "exact", head: true })
+          .eq("feed_events.user_id", user.id).neq("user_id", user.id).gt("created_at", lastSeen),
+        supabase.from("likes")
+          .select("event_id, feed_events!inner(user_id)", { count: "exact", head: true })
+          .eq("feed_events.user_id", user.id).neq("user_id", user.id).gt("created_at", lastSeen),
+      ]);
+      setUnread((rxCount || 0) + (likeCount || 0));
     })();
   }, [user]);
 
@@ -120,6 +106,15 @@ export default function Home() {
           {fmtDate(date)} ▾
         </button>
         <div className="flex items-center gap-2">
+          <Link href="/notifications" aria-label="Notifications"
+            className="relative rounded-full bg-white p-2.5 text-gray-700 shadow-card active:scale-95">
+            <Icon name="bell" className="h-[18px] w-[18px]" />
+            {unread > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                {unread > 9 ? "9+" : unread}
+              </span>
+            )}
+          </Link>
           <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-sm font-semibold shadow-card">
             <Icon name="flame" className="h-4 w-4 text-lock" /> {streak}
           </span>
@@ -203,28 +198,6 @@ export default function Home() {
 
       <Logger open={loggerOpen} onClose={() => setLoggerOpen(false)}
         onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged"); }} />
-
-      {/* Activity popup: new reactions/comments on your posts */}
-      {activity && !nudgers && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setActivity(null)} />
-          <div className="animate-pop relative w-full max-w-xs rounded-3xl bg-white p-5 shadow-xl">
-            <div className="flex justify-center text-lock"><Icon name="sparkles" className="h-8 w-8" /></div>
-            <h2 className="mt-1 text-center text-lg font-bold">While you were away</h2>
-            <div className="mt-3 max-h-60 space-y-1.5 overflow-y-auto">
-              {activity.map((a, i) => (
-                <div key={i} className="rounded-xl bg-gray-50 px-3 py-2 text-sm">
-                  {a.comment
-                    ? <><b>{a.who}</b> commented on {a.on}: <span className="italic text-gray-600">"{a.comment}"</span></>
-                    : <span className="flex items-center gap-1"><b>{a.who}</b> reacted
-                        <Icon name={REACTION_ICONS[a.emoji] || "flame"} className="h-4 w-4 text-lock" /> to {a.on}</span>}
-                </div>
-              ))}
-            </div>
-            <button className="btn-primary mt-4 w-full" onClick={() => setActivity(null)}>Nice</button>
-          </div>
-        </div>
-      )}
 
       {/* Nudge popup */}
       {nudgers && (
