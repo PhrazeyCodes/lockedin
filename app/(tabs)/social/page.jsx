@@ -92,17 +92,21 @@ export default function Social() {
     return m;
   }, [friends, profile]);
 
-  // group events by user+date; fixed display order inside a card so late logs
-  // don't jump above the photos (photos stay the hero of the post)
-  const EVENT_ORDER = { photos: 0, checkin: 1, lift: 2, food: 3, habits: 4, tasks: 5, journal_done: 6 };
+  // Group events into cards: weekly check-ins get their own post, everything else
+  // is the day's activity card. Fixed order inside a card so late logs don't jump
+  // above the photos.
+  const EVENT_ORDER = { photos: 0, lift: 1, food: 2, habits: 3, tasks: 4, journal_done: 5 };
   const groups = useMemo(() => {
     const g = {};
     for (const e of events) {
-      const k = `${e.date}|${e.user_id}`;
-      (g[k] = g[k] || []).push(e);
+      const kind = e.type === "checkin" ? "checkin" : "day";
+      const k = `${e.date}|${e.user_id}|${kind}`;
+      (g[k] = g[k] || { key: k, date: e.date, uid: e.user_id, kind, evs: [] }).evs.push(e);
     }
-    for (const k in g) g[k].sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
-    return Object.entries(g).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+    const out = Object.values(g);
+    for (const c of out) c.evs.sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
+    // newest date first; check-in sits above that day's activity card
+    return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : a.kind === "checkin" ? -1 : 1));
   }, [events]); // eslint-disable-line
 
   // leaderboard: weekly avg score + streak of days with any event
@@ -224,8 +228,7 @@ export default function Social() {
         </div>
       )}
       <div className="space-y-3">
-        {groups.map(([key, evs]) => {
-          const [date, uid] = key.split("|");
+        {groups.map(({ key, date, uid, kind, evs }) => {
           const p = profileMap[uid];
           if (!p) return null;
           const score = dayScore(evs);
@@ -237,7 +240,12 @@ export default function Social() {
               <div className="mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-2 font-bold">
                   {p.display_name}{uid === user.id && " (you)"}
-                  {uid === user.id && (
+                  {kind === "checkin" && (
+                    <span className="rounded-full bg-lock-faint px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-lock">
+                      Check-in
+                    </span>
+                  )}
+                  {kind === "day" && uid === user.id && (
                     <button aria-label="Add or edit photos"
                       className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
                       onClick={() => setEditorDate(date)}>
@@ -247,7 +255,7 @@ export default function Social() {
                 </span>
                 <span className="text-[11px] text-gray-400">
                   {date === today ? "Today" : new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                  <b className="ml-2 text-lock">{gradeFor(score)}</b>
+                  {kind === "day" && <b className="ml-2 text-lock">{gradeFor(score)}</b>}
                 </span>
               </div>
               <div className="space-y-1 text-sm">
@@ -290,6 +298,47 @@ export default function Social() {
   );
 }
 
+// Full-bleed photo viewer: one photo fills the card width, several become a
+// swipeable snap carousel so every shot gets the same frame.
+function PhotoStrip({ shots }) {
+  if (!shots.length) return null;
+  if (shots.length === 1) {
+    const s = shots[0];
+    return (
+      <div className="-mx-4 mt-2">
+        <img src={s.url} alt="" className="max-h-80 w-full object-cover" />
+        {(s.caption || s.at) && <PhotoMeta {...s} className="px-4" />}
+      </div>
+    );
+  }
+  return (
+    <div className="-mx-4 mt-2">
+      <div className="no-scrollbar flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-0.5">
+        {shots.map((s, i) => (
+          <div key={s.url || i} className="w-[80%] shrink-0 snap-center">
+            <img src={s.url} alt="" className="aspect-[3/4] w-full rounded-xl object-cover" />
+            {(s.caption || s.at) && <PhotoMeta {...s} />}
+          </div>
+        ))}
+      </div>
+      <p className="mt-1 px-4 text-[10px] text-gray-400">← swipe · {shots.length} photos</p>
+    </div>
+  );
+}
+
+function PhotoMeta({ caption, at, className = "" }) {
+  return (
+    <div className={`mt-1 flex items-baseline justify-between gap-2 ${className}`}>
+      {caption ? <p className="text-[12px] italic text-gray-600">"{caption}"</p> : <span />}
+      {at && (
+        <span className="shrink-0 text-[10px] text-gray-400">
+          {new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function EventLine({ e, p, photoUrls }) {
   const s = e.summary || {};
   // Nothing completed → nothing shown (also enforced at write time in lib/store.js)
@@ -306,25 +355,10 @@ function EventLine({ e, p, photoUrls }) {
       </div>
     );
   if (e.type === "photos") {
-    const items = (s.items || []).filter((it) => it.path && photoUrls[it.path]);
-    if (!items.length) return null;
-    return (
-      <div className="space-y-2">
-        {items.map((it, i) => (
-          <div key={it.path || i}>
-            <img src={photoUrls[it.path]} alt="update" className="max-h-72 w-full rounded-xl object-cover" />
-            <div className="mt-0.5 flex items-baseline justify-between">
-              {it.caption ? <p className="text-[12px] italic text-gray-600">"{it.caption}"</p> : <span />}
-              {it.at && (
-                <span className="shrink-0 text-[10px] text-gray-400">
-                  {new Date(it.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
+    const shots = (s.items || [])
+      .filter((it) => it.path && photoUrls[it.path])
+      .map((it) => ({ url: photoUrls[it.path], caption: it.caption, at: it.at }));
+    return <PhotoStrip shots={shots} />;
   }
   if (e.type === "habits") return <p>✅ Completed {s.done}/{s.total} habits</p>;
   if (e.type === "tasks") return <p>📋 Cleared {s.done}/{s.total} tasks</p>;
@@ -333,21 +367,14 @@ function EventLine({ e, p, photoUrls }) {
     const delta = s.weight && p.start_weight && p.goal_weight
       ? `${Math.abs(p.start_weight - s.weight).toFixed(1)} lb ${p.start_weight > p.goal_weight ? "down" : "up"} toward ${p.goal_weight}`
       : null;
-    const shots = (s.photo_paths?.length ? s.photo_paths : [s.photo_path]).filter((x) => x && photoUrls[x]);
+    const shots = (s.photo_paths?.length ? s.photo_paths : [s.photo_path])
+      .filter((x) => x && photoUrls[x])
+      .map((x) => ({ url: photoUrls[x] }));
     return (
       <div>
-        <p>🎯 Checked in: <b>{s.weight} lb</b>{delta && ` — ${delta}`}</p>
+        {s.weight && <p>🎯 Checked in: <b>{s.weight} lb</b>{delta && ` — ${delta}`}</p>}
         {s.caption && <p className="text-[12px] italic text-gray-600">"{s.caption}"</p>}
-        {shots.length === 1 && (
-          <img src={photoUrls[shots[0]]} alt="check-in" className="mt-1.5 max-h-72 w-full rounded-xl object-cover" />
-        )}
-        {shots.length > 1 && (
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-            {shots.map((p) => (
-              <img key={p} src={photoUrls[p]} alt="check-in" className="aspect-[3/4] w-full rounded-xl object-cover" />
-            ))}
-          </div>
-        )}
+        <PhotoStrip shots={shots} />
       </div>
     );
   }
