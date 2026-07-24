@@ -252,14 +252,14 @@ export default function Lift() {
       </div>
 
       {!lift?.type && !runs.length && (
-        <div className="card text-center">
+        <div className="card mb-3 text-center">
           <p className="mb-3 text-gray-500">Nothing logged {fmtDate(date).toLowerCase()}.</p>
           <button className="btn-primary w-full" onClick={() => setPickerOpen(true)}>Log a session</button>
         </div>
       )}
 
       {lift?.type === "Rest" && (
-        <div className="card text-center">
+        <div className="card mb-3 text-center">
           <div className="flex justify-center text-blue-500"><Icon name="bed" className="h-9 w-9" /></div>
           <p className="mt-2 font-bold">Rest day logged</p>
           <p className="text-sm text-gray-500">Home is now showing rest-day macros.</p>
