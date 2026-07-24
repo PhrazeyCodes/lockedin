@@ -7,6 +7,7 @@ import { dayScore, gradeFor } from "@/lib/score";
 import Sheet from "@/components/Sheet";
 import { showToast } from "@/components/Toast";
 import Icon, { REACTION_VALUES, REACTION_ICONS } from "@/components/Icon";
+import { SOCIAL_SEEN_KEY } from "@/lib/notifications";
 
 // Reaction values stay as stored emoji for backwards compatibility; rendered as icons.
 const EMOJIS = REACTION_VALUES;
@@ -26,7 +27,7 @@ export default function Social() {
   const [nudgeFor, setNudgeFor] = useState(null);     // friend profile being nudged
   const [myNudges, setMyNudges] = useState([]);       // nudges received today
   const [audioUrls, setAudioUrls] = useState({});     // signed urls for voice memos
-  const [composerDate, setComposerDate] = useState(null); // custom post being written/edited
+  const [composer, setComposer] = useState(null); // { date, event } — event null when writing a new post
   const [likes, setLikes] = useState([]);             // {event_id, user_id}
   const [burst, setBurst] = useState(null);           // card key showing the heart animation
   const tapRef = useRef({});                          // last tap time per card, for double-tap
@@ -99,6 +100,15 @@ export default function Social() {
 
   useEffect(() => { if (user) refresh(); }, [user]); // eslint-disable-line
 
+  // Opening the feed clears the unread badge on the tab. Stamped on unmount too
+  // so posts that arrive while you're reading don't count as unread.
+  useEffect(() => {
+    if (!user) return;
+    const stamp = () => localStorage.setItem(SOCIAL_SEEN_KEY, new Date().toISOString());
+    stamp();
+    return stamp;
+  }, [user]);
+
   const profileMap = useMemo(() => {
     const m = Object.fromEntries(friends.map((f) => [f.id, f]));
     if (profile) m[profile.id] = profile;
@@ -116,7 +126,10 @@ export default function Social() {
       const kind = e.type === "checkin" ? "checkin"
         : e.type === "run" ? "run"
         : e.type === "post" ? "post" : "day";
-      const k = `${e.date}|${e.user_id}|${kind}`;
+      // each user-written post is its own card, so its row id joins the key
+      const k = kind === "post"
+        ? `${e.date}|${e.user_id}|post|${e.id}`
+        : `${e.date}|${e.user_id}|${kind}`;
       (g[k] = g[k] || { key: k, date: e.date, uid: e.user_id, kind, evs: [] }).evs.push(e);
     }
     const out = Object.values(g);
@@ -209,7 +222,7 @@ export default function Social() {
         <div className="flex gap-2">
           <button aria-label="New post"
             className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-lock text-xl font-bold leading-none text-white shadow-card active:scale-95"
-            onClick={() => setComposerDate(todayStr())}>+</button>
+            onClick={() => setComposer({ date: todayStr(), event: null })}>+</button>
           <button aria-label="Progress check-ins"
             className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white text-gray-900 shadow-card active:scale-95"
             onClick={() => setCompareOpen(true)}>
@@ -328,7 +341,7 @@ export default function Social() {
                   )}
                   {kind === "post" && uid === user.id && (
                     <button className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
-                      onClick={() => setComposerDate(date)}>
+                      onClick={() => setComposer({ date, event: evs[0] })}>
                       edit
                     </button>
                   )}
@@ -388,8 +401,8 @@ export default function Social() {
         existing={events.find((e) => e.user_id === user?.id && e.date === editorDate && e.type === "photos") || null}
         photoUrls={photoUrls} onSaved={refresh} />
       <NudgeSheet open={!!nudgeFor} onClose={() => setNudgeFor(null)} me={user?.id} friend={nudgeFor} onSent={onNudgeSent} />
-      <PostComposerSheet open={!!composerDate} onClose={() => setComposerDate(null)} user={user} date={composerDate}
-        existing={events.find((e) => e.user_id === user?.id && e.date === composerDate && e.type === "post") || null}
+      <PostComposerSheet open={!!composer} onClose={() => setComposer(null)} user={user}
+        date={composer?.date} existing={composer?.event || null}
         photoUrls={photoUrls} audioUrls={audioUrls} onSaved={refresh} />
     </div>
   );
@@ -661,9 +674,9 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
         : [{ user_id: user.id, date, photo_path: null, weight: w, caption }];
       await supabase.from("checkins").insert(rows);
       await supabase.from("feed_events").upsert(
-        { user_id: user.id, date, type: "checkin",
+        { user_id: user.id, date, type: "checkin", post_key: "",
           summary: { weight: w, caption, photo_path: paths[0] || null, photo_paths: paths } },
-        { onConflict: "user_id,date,type" });
+        { onConflict: "user_id,date,type,post_key" });
       showToast("Check-in posted");
       onPosted();
       onClose();
@@ -878,12 +891,18 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
         next.push({ text: text.trim() || null, photo_paths, audio_path, at: new Date().toISOString() });
       }
       if (next.length) {
-        await supabase.from("feed_events").upsert(
-          { user_id: user.id, date, type: "post", summary: { items: next } },
-          { onConflict: "user_id,date,type" });
+        if (existing) {
+          // editing an existing post — update that row only
+          await supabase.from("feed_events").update({ summary: { items: next } }).eq("id", existing.id);
+        } else {
+          // a brand new post gets its own row, so it renders as its own card
+          await supabase.from("feed_events").insert({
+            user_id: user.id, date, type: "post",
+            summary: { items: next }, post_key: crypto.randomUUID(),
+          });
+        }
       } else if (existing) {
-        await supabase.from("feed_events").delete()
-          .eq("user_id", user.id).eq("date", date).eq("type", "post");
+        await supabase.from("feed_events").delete().eq("id", existing.id);
       }
       showToast(existing ? "Post updated" : "Posted");
       onSaved(); onClose();
@@ -892,11 +911,11 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="New post">
+    <Sheet open={open} onClose={onClose} title={existing ? "Edit post" : "New post"}>
       <div className="space-y-3">
         {items.length > 0 && (
           <div className="space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Already posted today</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">In this post</p>
             {items.map((it, i) => (
               <div key={i} className="flex items-start justify-between gap-2 rounded-xl bg-gray-50 p-2.5">
                 <div className="min-w-0 flex-1 text-[12px] text-gray-600">
@@ -1027,8 +1046,8 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
       const clean = items.map(({ preview, ...it }) => it);
       if (clean.length) {
         await supabase.from("feed_events").upsert(
-          { user_id: user.id, date, type: "photos", summary: { items: clean } },
-          { onConflict: "user_id,date,type" });
+          { user_id: user.id, date, type: "photos", summary: { items: clean }, post_key: "" },
+          { onConflict: "user_id,date,type,post_key" });
       } else if (existing) {
         await supabase.from("feed_events").delete()
           .eq("user_id", user.id).eq("date", date).eq("type", "photos");
