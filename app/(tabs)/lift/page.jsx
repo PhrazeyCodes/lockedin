@@ -204,6 +204,11 @@ export default function Lift() {
                       onClick={() => update((d) => { d.lift.exercises[ei].sets[si].done = !s.done; return d; })}>
                       ✓
                     </button>
+                    <button aria-label="Delete set"
+                      className="flex h-9 w-6 items-center justify-center text-gray-300 active:scale-90 active:text-red-400"
+                      onClick={() => update((d) => { d.lift.exercises[ei].sets.splice(si, 1); return d; })}>
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
 import { todayStr, addDays } from "@/lib/dates";
@@ -20,6 +20,10 @@ export default function Social() {
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [photoUrls, setPhotoUrls] = useState({});
+  const [editorDate, setEditorDate] = useState(null); // date of own post being edited
+  const [nudgeFor, setNudgeFor] = useState(null);     // friend profile being nudged
+  const [myNudges, setMyNudges] = useState([]);       // nudges received today
+  const [audioUrls, setAudioUrls] = useState({});     // signed urls for nudge voice memos
 
   async function refresh() {
     const me = user.id;
@@ -47,8 +51,12 @@ export default function Social() {
     if (evs?.length) {
       const { data: rx } = await supabase.from("reactions").select("*").in("event_id", evs.map((e) => e.id));
       setReactions(rx || []);
-      // signed urls for checkin photos
-      const paths = evs.filter((e) => e.type === "checkin" && e.summary?.photo_path).map((e) => e.summary.photo_path);
+      // signed urls for checkin + photo-update photos
+      const paths = [];
+      for (const e of evs) {
+        if (e.type === "checkin" && e.summary?.photo_path) paths.push(e.summary.photo_path);
+        if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
+      }
       const urls = {};
       for (const p of paths) {
         const { data } = await supabase.storage.from("checkins").createSignedUrl(p, 3600);
@@ -59,6 +67,18 @@ export default function Social() {
 
     const { data: nd } = await supabase.from("nudges").select("to_user").eq("from_user", me).eq("date", todayStr());
     setNudgedToday(new Set((nd || []).map((n) => n.to_user)));
+
+    // nudges received today (with voice memos)
+    const { data: rec } = await supabase.from("nudges").select("*").eq("to_user", me).eq("date", todayStr());
+    setMyNudges(rec || []);
+    const aurls = {};
+    for (const n of rec || []) {
+      if (n.audio_path) {
+        const { data } = await supabase.storage.from("checkins").createSignedUrl(n.audio_path, 3600);
+        if (data?.signedUrl) aurls[n.audio_path] = data.signedUrl;
+      }
+    }
+    setAudioUrls(aurls);
   }
 
   useEffect(() => { if (user) refresh(); }, [user]); // eslint-disable-line
@@ -100,10 +120,8 @@ export default function Social() {
   const isCheckinDay = profile && new Date().getDay() === profile.checkin_day;
   const checkedInThisWeek = events.some((e) => e.user_id === user.id && e.type === "checkin" && e.date >= addDays(today, -6));
 
-  async function nudge(fid) {
-    await supabase.from("nudges").insert({ from_user: user.id, to_user: fid, date: today });
+  function onNudgeSent(fid) {
     setNudgedToday(new Set([...nudgedToday, fid]));
-    showToast("Nudge sent 👀");
   }
 
   // One reaction per user per post: tap same = remove, tap different = switch
@@ -134,6 +152,26 @@ export default function Social() {
         <button className="btn-primary mb-3 w-full" onClick={() => setCheckinOpen(true)}>
           📸 It's check-in day — post your weekly check-in
         </button>
+      )}
+
+      {/* Nudges received today */}
+      {myNudges.length > 0 && (
+        <div className="card mb-3 bg-amber-50">
+          <h3 className="mb-1.5 font-bold">👀 You got nudged</h3>
+          <div className="space-y-2">
+            {myNudges.map((n) => (
+              <div key={n.from_user}>
+                <p className="text-sm">
+                  <b>{profileMap[n.from_user]?.display_name || "A friend"}</b> says lock in
+                  {n.message && <span className="italic text-gray-600"> — "{n.message}"</span>}
+                </p>
+                {n.audio_path && audioUrls[n.audio_path] && (
+                  <audio controls preload="metadata" src={audioUrls[n.audio_path]} className="mt-1 h-9 w-full" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Leaderboard */}
@@ -167,7 +205,7 @@ export default function Social() {
         <div key={f.id} className="mb-2 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2">
           <span className="text-sm">👀 <b>{f.display_name}</b> hasn't logged anything today</span>
           <button className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
-            disabled={nudgedToday.has(f.id)} onClick={() => nudge(f.id)}>
+            disabled={nudgedToday.has(f.id)} onClick={() => setNudgeFor(f)}>
             {nudgedToday.has(f.id) ? "Nudged ✓" : "Lock in 👀"}
           </button>
         </div>
@@ -191,7 +229,16 @@ export default function Social() {
           return (
             <div key={key} className="card">
               <div className="mb-2 flex items-center justify-between">
-                <span className="font-bold">{p.display_name}{uid === user.id && " (you)"}</span>
+                <span className="flex items-center gap-2 font-bold">
+                  {p.display_name}{uid === user.id && " (you)"}
+                  {uid === user.id && (
+                    <button aria-label="Add or edit photos"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
+                      onClick={() => setEditorDate(date)}>
+                      📸 {evs.some((e) => e.type === "photos") ? "edit" : "add"}
+                    </button>
+                  )}
+                </span>
                 <span className="text-[11px] text-gray-400">
                   {date === today ? "Today" : new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                   <b className="ml-2 text-lock">{gradeFor(score)}</b>
@@ -229,6 +276,10 @@ export default function Social() {
       <CheckinSheet open={checkinOpen} onClose={() => setCheckinOpen(false)} user={user} profile={profile} onPosted={refresh} />
       <CompareSheet open={compareOpen} onClose={() => setCompareOpen(false)} uid={user?.id}
         onNew={() => { setCompareOpen(false); setCheckinOpen(true); }} />
+      <PostEditorSheet open={!!editorDate} onClose={() => setEditorDate(null)} user={user} date={editorDate}
+        existing={events.find((e) => e.user_id === user?.id && e.date === editorDate && e.type === "photos") || null}
+        photoUrls={photoUrls} onSaved={refresh} />
+      <NudgeSheet open={!!nudgeFor} onClose={() => setNudgeFor(null)} me={user?.id} friend={nudgeFor} onSent={onNudgeSent} />
     </div>
   );
 }
@@ -248,6 +299,27 @@ function EventLine({ e, p, photoUrls }) {
         {s.note && <p className="mt-0.5 rounded-lg bg-gray-50 px-2 py-1 text-[12px] italic text-gray-600">"{s.note}"</p>}
       </div>
     );
+  if (e.type === "photos") {
+    const items = (s.items || []).filter((it) => it.path && photoUrls[it.path]);
+    if (!items.length) return null;
+    return (
+      <div className="space-y-2">
+        {items.map((it, i) => (
+          <div key={it.path || i}>
+            <img src={photoUrls[it.path]} alt="update" className="max-h-72 w-full rounded-xl object-cover" />
+            <div className="mt-0.5 flex items-baseline justify-between">
+              {it.caption ? <p className="text-[12px] italic text-gray-600">"{it.caption}"</p> : <span />}
+              {it.at && (
+                <span className="shrink-0 text-[10px] text-gray-400">
+                  {new Date(it.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (e.type === "habits") return <p>✅ Completed {s.done}/{s.total} habits</p>;
   if (e.type === "tasks") return <p>📋 Cleared {s.done}/{s.total} tasks</p>;
   if (e.type === "journal_done") return <p>📓 Journaled ✓</p>;
@@ -461,6 +533,204 @@ function CompareSheet({ open, onClose, uid, onNew }) {
             </div>
           </div>
         ))}
+      </div>
+    </Sheet>
+  );
+}
+
+const MAX_MEMO_SECS = 15;
+
+// Nudge a friend with an optional voice memo + text roast.
+function NudgeSheet({ open, onClose, me, friend, onSent }) {
+  const [recording, setRecording] = useState(false);
+  const [secs, setSecs] = useState(0);
+  const [blob, setBlob] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const recRef = useRef(null);
+
+  useEffect(() => {
+    if (open) { setBlob(null); setPreview(null); setMessage(""); setError(""); setSecs(0); setRecording(false); }
+    return () => { try { recRef.current?.stop(); } catch {} };
+  }, [open]);
+
+  // recording timer + auto-stop cap
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => setSecs((s) => {
+      if (s + 1 >= MAX_MEMO_SECS) stopRec();
+      return s + 1;
+    }), 1000);
+    return () => clearInterval(t);
+  }, [recording]); // eslint-disable-line
+
+  if (!open || !friend) return null;
+
+  async function startRec() {
+    setError(""); setBlob(null); setPreview(null); setSecs(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm" : "audio/mp4";
+      const r = new MediaRecorder(stream, { mimeType: mime });
+      const chunks = [];
+      r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      r.onstop = () => {
+        const b = new Blob(chunks, { type: mime });
+        setBlob(b);
+        setPreview(URL.createObjectURL(b));
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      r.start();
+      recRef.current = r;
+      setRecording(true);
+    } catch {
+      setError("Couldn't access the mic — check permissions.");
+    }
+  }
+
+  function stopRec() {
+    try { recRef.current?.stop(); } catch {}
+    setRecording(false);
+  }
+
+  async function send() {
+    setBusy(true); setError("");
+    try {
+      const date = todayStr();
+      let audio_path = null;
+      if (blob) {
+        const ext = blob.type.includes("mp4") ? "m4a" : "webm";
+        audio_path = `${me}/nudges/${date}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("checkins")
+          .upload(audio_path, blob, { upsert: true, contentType: blob.type });
+        if (upErr) throw upErr;
+      }
+      const { error: insErr } = await supabase.from("nudges")
+        .insert({ from_user: me, to_user: friend.id, date, audio_path, message: message.trim() || null });
+      if (insErr) throw insErr;
+      showToast("Nudge sent 👀");
+      onSent(friend.id);
+      onClose();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title={`👀 Nudge ${friend.display_name}`}>
+      <div className="space-y-3">
+        <p className="text-[12px] text-gray-400">
+          They haven't logged anything today. Say it to their face — 15 seconds max.
+        </p>
+
+        {!recording && !blob && (
+          <button className="btn-primary w-full" onClick={startRec}>🎙 Record voice memo</button>
+        )}
+        {recording && (
+          <button className="w-full animate-pulse rounded-2xl bg-red-500 py-3 font-bold text-white active:scale-95"
+            onClick={stopRec}>
+            ⏹ Recording… {secs}s / {MAX_MEMO_SECS}s — tap to stop
+          </button>
+        )}
+        {blob && preview && (
+          <div className="rounded-xl bg-gray-50 p-2.5">
+            <audio controls src={preview} className="h-9 w-full" />
+            <button className="mt-1 text-xs font-semibold text-red-400"
+              onClick={() => { setBlob(null); setPreview(null); }}>
+              Re-record
+            </button>
+          </div>
+        )}
+
+        <input className="input" placeholder="Or type a message (optional)"
+          value={message} onChange={(e) => setMessage(e.target.value)} maxLength={120} />
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button className="btn-primary w-full" disabled={busy || recording} onClick={send}>
+          {busy ? "Sending…" : blob || message.trim() ? "Send nudge 👀" : "Send plain nudge 👀"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+// Add / edit photo updates on your own post — "live updates" through the day.
+// Stored as one feed_event of type "photos" per day: summary.items = [{ path, caption, at }]
+function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSaved }) {
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open) setItems((existing?.summary?.items || []).map((x) => ({ ...x })));
+  }, [open, existing]);
+
+  if (!open) return null;
+
+  async function addPhoto(file) {
+    if (!file) return;
+    setBusy(true); setError("");
+    try {
+      const path = `${user.id}/updates/${date}-${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage.from("checkins").upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      setItems((p) => [...p, { path, caption: "", at: new Date().toISOString(), preview: URL.createObjectURL(file) }]);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  async function save() {
+    setBusy(true); setError("");
+    try {
+      // clean out photos removed during editing
+      const kept = new Set(items.map((it) => it.path));
+      const removed = (existing?.summary?.items || []).map((it) => it.path).filter((p) => p && !kept.has(p));
+      if (removed.length) await supabase.storage.from("checkins").remove(removed);
+
+      const clean = items.map(({ preview, ...it }) => it);
+      if (clean.length) {
+        await supabase.from("feed_events").upsert(
+          { user_id: user.id, date, type: "photos", summary: { items: clean } },
+          { onConflict: "user_id,date,type" });
+      } else if (existing) {
+        await supabase.from("feed_events").delete()
+          .eq("user_id", user.id).eq("date", date).eq("type", "photos");
+      }
+      showToast("Post updated ✓");
+      onSaved(); onClose();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title="📸 Photo updates">
+      <p className="mb-3 text-[11px] text-gray-400">
+        Add photos to today's post as the day unfolds — meals, pumps, PRs. Friends see them live in the feed.
+      </p>
+      <div className="space-y-3">
+        {items.map((it, i) => (
+          <div key={it.path || i} className="rounded-xl bg-gray-50 p-2">
+            <img src={photoUrls[it.path] || it.preview} alt="" className="max-h-56 w-full rounded-lg object-cover" />
+            <div className="mt-1.5 flex items-center gap-2">
+              <input className="input flex-1 py-1.5 text-sm" placeholder="Caption (optional)"
+                value={it.caption || ""}
+                onChange={(e) => setItems((p) => p.map((x, xi) => (xi === i ? { ...x, caption: e.target.value } : x)))} />
+              <button className="shrink-0 text-xs font-semibold text-red-400 active:scale-95"
+                onClick={() => setItems((p) => p.filter((_, xi) => xi !== i))}>
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+        <label className={`btn-ghost block w-full cursor-pointer text-center ${busy ? "opacity-50" : ""}`}>
+          {busy ? "Uploading…" : "+ Add photo"}
+          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={busy}
+            onChange={(e) => { addPhoto(e.target.files?.[0] || null); e.target.value = ""; }} />
+        </label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button className="btn-primary w-full" disabled={busy} onClick={save}>Save</button>
       </div>
     </Sheet>
   );
