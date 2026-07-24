@@ -672,14 +672,17 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
 
   if (!open) return null;
 
-  async function addPhoto(file) {
-    if (!file) return;
+  async function addPhotos(files) {
+    const list = Array.from(files || []);
+    if (!list.length) return;
     setBusy(true); setError("");
     try {
-      const path = `${user.id}/updates/${date}-${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage.from("checkins").upload(path, file, { upsert: true });
-      if (upErr) throw upErr;
-      setItems((p) => [...p, { path, caption: "", at: new Date().toISOString(), preview: URL.createObjectURL(file) }]);
+      for (const [i, file] of list.entries()) {
+        const path = `${user.id}/updates/${date}-${Date.now()}-${i}.jpg`;
+        const { error: upErr } = await supabase.storage.from("checkins").upload(path, file, { upsert: true });
+        if (upErr) throw upErr;
+        setItems((p) => [...p, { path, caption: "", at: new Date().toISOString(), preview: URL.createObjectURL(file) }]);
+      }
     } catch (e) { setError(e.message); }
     setBusy(false);
   }
@@ -728,9 +731,9 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
           </div>
         ))}
         <label className={`btn-ghost block w-full cursor-pointer text-center ${busy ? "opacity-50" : ""}`}>
-          {busy ? "Uploading…" : "+ Add photo"}
-          <input type="file" accept="image/*" className="hidden" disabled={busy}
-            onChange={(e) => { addPhoto(e.target.files?.[0] || null); e.target.value = ""; }} />
+          {busy ? "Uploading…" : "+ Add photos"}
+          <input type="file" accept="image/*" multiple className="hidden" disabled={busy}
+            onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button className="btn-primary w-full" disabled={busy} onClick={save}>Save</button>
