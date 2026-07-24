@@ -99,9 +99,10 @@ export default function Social() {
     return m;
   }, [friends, profile]);
 
-  // Group events into cards: weekly check-ins get their own post, everything else
-  // is the day's activity card. Fixed order inside a card so late logs don't jump
-  // above the photos.
+  // Group events into cards: check-ins, runs and custom posts each get their own
+  // card; everything else is the day's activity card. Cards are ordered newest
+  // first by when they were posted — nothing is pinned. Inside a card the order
+  // is fixed so late logs don't jump above the photos.
   const EVENT_ORDER = { photos: 0, lift: 1, food: 2, habits: 3, tasks: 4, journal_done: 5 };
   const groups = useMemo(() => {
     const g = {};
@@ -113,10 +114,12 @@ export default function Social() {
       (g[k] = g[k] || { key: k, date: e.date, uid: e.user_id, kind, evs: [] }).evs.push(e);
     }
     const out = Object.values(g);
-    for (const c of out) c.evs.sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
-    // newest date first; within a day: check-in, then custom post, then activity
-    const KIND_ORDER = { checkin: 0, run: 1, post: 2, day: 3 };
-    return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
+    for (const c of out) {
+      c.evs.sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
+      // most recent activity in the card decides where the card sits
+      c.ts = Math.max(...c.evs.map((e) => new Date(e.created_at || 0).getTime() || 0));
+    }
+    return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : b.ts - a.ts));
   }, [events]); // eslint-disable-line
 
   // All of a user's events for a date — the day grade counts runs and check-ins
