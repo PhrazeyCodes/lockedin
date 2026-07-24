@@ -469,7 +469,7 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
   return (
     <Sheet open={open} onClose={onClose} title="📸 Weekly check-in">
       <div className="space-y-3">
-        <input type="file" accept="image/*" capture="environment" className="input"
+        <input type="file" accept="image/*" className="input"
           onChange={(e) => setFile(e.target.files?.[0] || null)} />
         <input className="input" type="number" inputMode="decimal" placeholder={`Current weight (${profile?.unit_pref || "lb"})`}
           value={weight} onChange={(e) => setWeight(e.target.value)} />
@@ -729,7 +729,7 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
         ))}
         <label className={`btn-ghost block w-full cursor-pointer text-center ${busy ? "opacity-50" : ""}`}>
           {busy ? "Uploading…" : "+ Add photo"}
-          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={busy}
+          <input type="file" accept="image/*" className="hidden" disabled={busy}
             onChange={(e) => { addPhoto(e.target.files?.[0] || null); e.target.value = ""; }} />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}

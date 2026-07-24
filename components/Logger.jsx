@@ -43,7 +43,7 @@ export default function Logger({ open, onClose, onLog }) {
 
   return (
     <Sheet open={open} onClose={onClose} title={view === "menu" ? "Log food" : undefined}>
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
       {busy && <p className="mb-2 animate-pulse text-sm text-gray-500">Analyzing…</p>}
 
