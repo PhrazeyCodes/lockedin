@@ -89,15 +89,18 @@ export default function Social() {
     return m;
   }, [friends, profile]);
 
-  // group events by user+date
+  // group events by user+date; fixed display order inside a card so late logs
+  // don't jump above the photos (photos stay the hero of the post)
+  const EVENT_ORDER = { photos: 0, checkin: 1, lift: 2, food: 3, habits: 4, tasks: 5, journal_done: 6 };
   const groups = useMemo(() => {
     const g = {};
     for (const e of events) {
       const k = `${e.date}|${e.user_id}`;
       (g[k] = g[k] || []).push(e);
     }
+    for (const k in g) g[k].sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
     return Object.entries(g).sort((a, b) => (a[0] < b[0] ? 1 : -1));
-  }, [events]);
+  }, [events]); // eslint-disable-line
 
   // leaderboard: weekly avg score + streak of days with any event
   const board = useMemo(() => {
