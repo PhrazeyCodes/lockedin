@@ -23,7 +23,8 @@ export default function Social() {
   const [editorDate, setEditorDate] = useState(null); // date of own post being edited
   const [nudgeFor, setNudgeFor] = useState(null);     // friend profile being nudged
   const [myNudges, setMyNudges] = useState([]);       // nudges received today
-  const [audioUrls, setAudioUrls] = useState({});     // signed urls for nudge voice memos
+  const [audioUrls, setAudioUrls] = useState({});     // signed urls for voice memos
+  const [composerDate, setComposerDate] = useState(null); // custom post being written/edited
 
   async function refresh() {
     const me = user.id;
@@ -59,6 +60,7 @@ export default function Social() {
           for (const p of cp) if (p) paths.push(p);
         }
         if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
+        if (e.type === "post") for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
       }
       const urls = {};
       for (const p of paths) {
@@ -74,12 +76,14 @@ export default function Social() {
     // nudges received today (with voice memos)
     const { data: rec } = await supabase.from("nudges").select("*").eq("to_user", me).eq("date", todayStr());
     setMyNudges(rec || []);
+    const audioPaths = (rec || []).filter((n) => n.audio_path).map((n) => n.audio_path);
+    for (const e of evs || []) {
+      if (e.type === "post") for (const it of e.summary?.items || []) if (it.audio_path) audioPaths.push(it.audio_path);
+    }
     const aurls = {};
-    for (const n of rec || []) {
-      if (n.audio_path) {
-        const { data } = await supabase.storage.from("checkins").createSignedUrl(n.audio_path, 3600);
-        if (data?.signedUrl) aurls[n.audio_path] = data.signedUrl;
-      }
+    for (const a of audioPaths) {
+      const { data } = await supabase.storage.from("checkins").createSignedUrl(a, 3600);
+      if (data?.signedUrl) aurls[a] = data.signedUrl;
     }
     setAudioUrls(aurls);
   }
@@ -99,14 +103,15 @@ export default function Social() {
   const groups = useMemo(() => {
     const g = {};
     for (const e of events) {
-      const kind = e.type === "checkin" ? "checkin" : "day";
+      const kind = e.type === "checkin" ? "checkin" : e.type === "post" ? "post" : "day";
       const k = `${e.date}|${e.user_id}|${kind}`;
       (g[k] = g[k] || { key: k, date: e.date, uid: e.user_id, kind, evs: [] }).evs.push(e);
     }
     const out = Object.values(g);
     for (const c of out) c.evs.sort((a, b) => (EVENT_ORDER[a.type] ?? 9) - (EVENT_ORDER[b.type] ?? 9));
-    // newest date first; check-in sits above that day's activity card
-    return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : a.kind === "checkin" ? -1 : 1));
+    // newest date first; within a day: check-in, then custom post, then activity
+    const KIND_ORDER = { checkin: 0, post: 1, day: 2 };
+    return out.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
   }, [events]); // eslint-disable-line
 
   // leaderboard: weekly avg score + streak of days with any event
@@ -151,6 +156,9 @@ export default function Social() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Social</h1>
         <div className="flex gap-2">
+          <button aria-label="New post"
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-lock text-xl font-bold leading-none text-white shadow-card active:scale-95"
+            onClick={() => setComposerDate(todayStr())}>+</button>
           <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card" onClick={() => setCompareOpen(true)}>📸</button>
           <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card" onClick={() => setFriendsOpen(true)}>
             Friends{pendingIn.length > 0 && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">{pendingIn.length}</span>}
@@ -245,6 +253,17 @@ export default function Social() {
                       Check-in
                     </span>
                   )}
+                  {kind === "post" && (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                      Post
+                    </span>
+                  )}
+                  {kind === "post" && uid === user.id && (
+                    <button className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
+                      onClick={() => setComposerDate(date)}>
+                      edit
+                    </button>
+                  )}
                   {kind === "day" && uid === user.id && (
                     <button aria-label="Add or edit photos"
                       className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
@@ -259,7 +278,7 @@ export default function Social() {
                 </span>
               </div>
               <div className="space-y-1 text-sm">
-                {evs.map((e) => <EventLine key={e.id} e={e} p={p} photoUrls={photoUrls} />)}
+                {evs.map((e) => <EventLine key={e.id} e={e} p={p} photoUrls={photoUrls} audioUrls={audioUrls} />)}
               </div>
               <div className="mt-2 flex items-center gap-1 border-t border-gray-50 pt-2">
                 {EMOJIS.map((em) => {
@@ -294,6 +313,9 @@ export default function Social() {
         existing={events.find((e) => e.user_id === user?.id && e.date === editorDate && e.type === "photos") || null}
         photoUrls={photoUrls} onSaved={refresh} />
       <NudgeSheet open={!!nudgeFor} onClose={() => setNudgeFor(null)} me={user?.id} friend={nudgeFor} onSent={onNudgeSent} />
+      <PostComposerSheet open={!!composerDate} onClose={() => setComposerDate(null)} user={user} date={composerDate}
+        existing={events.find((e) => e.user_id === user?.id && e.date === composerDate && e.type === "post") || null}
+        photoUrls={photoUrls} audioUrls={audioUrls} onSaved={refresh} />
     </div>
   );
 }
@@ -339,8 +361,33 @@ function PhotoMeta({ caption, at, className = "" }) {
   );
 }
 
-function EventLine({ e, p, photoUrls }) {
+function EventLine({ e, p, photoUrls, audioUrls = {} }) {
   const s = e.summary || {};
+  if (e.type === "post") {
+    const items = s.items || [];
+    if (!items.length) return null;
+    return (
+      <div className="space-y-3">
+        {items.map((it, i) => {
+          const shots = (it.photo_paths || []).filter((x) => photoUrls[x]).map((x) => ({ url: photoUrls[x] }));
+          return (
+            <div key={i} className={i > 0 ? "border-t border-gray-50 pt-3" : ""}>
+              {it.text && <p className="whitespace-pre-wrap text-sm">{it.text}</p>}
+              {it.audio_path && audioUrls[it.audio_path] && (
+                <audio controls preload="metadata" src={audioUrls[it.audio_path]} className="mt-1.5 h-9 w-full" />
+              )}
+              <PhotoStrip shots={shots} />
+              {it.at && (
+                <p className="mt-1 text-[10px] text-gray-400">
+                  {new Date(it.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   // Nothing completed → nothing shown (also enforced at write time in lib/store.js)
   if (e.type === "food" && !s.meals) return null;
   if (e.type === "habits" && !s.done) return null;
@@ -598,43 +645,37 @@ function CompareSheet({ open, onClose, uid, onNew }) {
 
 const MAX_MEMO_SECS = 15;
 
-// Nudge a friend with an optional voice memo + text roast.
-function NudgeSheet({ open, onClose, me, friend, onSent }) {
+// Shared voice-memo recorder (used by nudges and custom posts).
+function useRecorder(maxSecs = MAX_MEMO_SECS) {
   const [recording, setRecording] = useState(false);
   const [secs, setSecs] = useState(0);
   const [blob, setBlob] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [micError, setMicError] = useState("");
   const recRef = useRef(null);
 
-  useEffect(() => {
-    if (open) { setBlob(null); setPreview(null); setMessage(""); setError(""); setSecs(0); setRecording(false); }
-    return () => { try { recRef.current?.stop(); } catch {} };
-  }, [open]);
+  useEffect(() => () => { try { recRef.current?.stop(); } catch {} }, []);
 
-  // recording timer + auto-stop cap
   useEffect(() => {
     if (!recording) return;
     const t = setInterval(() => setSecs((s) => {
-      if (s + 1 >= MAX_MEMO_SECS) stopRec();
+      if (s + 1 >= maxSecs) stop();
       return s + 1;
     }), 1000);
     return () => clearInterval(t);
   }, [recording]); // eslint-disable-line
 
-  if (!open || !friend) return null;
+  function reset() { setBlob(null); setPreview(null); setSecs(0); setMicError(""); setRecording(false); }
 
-  async function startRec() {
-    setError(""); setBlob(null); setPreview(null); setSecs(0);
+  async function start() {
+    setMicError(""); setBlob(null); setPreview(null); setSecs(0);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
         ? "audio/webm" : "audio/mp4";
       const r = new MediaRecorder(stream, { mimeType: mime });
       const chunks = [];
-      r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      r.ondataavailable = (ev) => ev.data.size && chunks.push(ev.data);
       r.onstop = () => {
         const b = new Blob(chunks, { type: mime });
         setBlob(b);
@@ -645,25 +686,162 @@ function NudgeSheet({ open, onClose, me, friend, onSent }) {
       recRef.current = r;
       setRecording(true);
     } catch {
-      setError("Couldn't access the mic — check permissions.");
+      setMicError("Couldn't access the mic — check permissions.");
     }
   }
 
-  function stopRec() {
+  function stop() {
     try { recRef.current?.stop(); } catch {}
     setRecording(false);
   }
+
+  return { recording, secs, blob, preview, micError, start, stop, reset, maxSecs };
+}
+
+function RecorderControls({ rec }) {
+  return (
+    <>
+      {!rec.recording && !rec.blob && (
+        <button className="btn-ghost w-full" onClick={rec.start}>🎙 Record voice memo</button>
+      )}
+      {rec.recording && (
+        <button className="w-full animate-pulse rounded-2xl bg-red-500 py-3 font-bold text-white active:scale-95"
+          onClick={rec.stop}>
+          ⏹ Recording… {rec.secs}s / {rec.maxSecs}s — tap to stop
+        </button>
+      )}
+      {rec.blob && rec.preview && (
+        <div className="rounded-xl bg-gray-50 p-2.5">
+          <audio controls src={rec.preview} className="h-9 w-full" />
+          <button className="mt-1 text-xs font-semibold text-red-400" onClick={rec.reset}>Re-record</button>
+        </div>
+      )}
+      {rec.micError && <p className="text-sm text-red-600">{rec.micError}</p>}
+    </>
+  );
+}
+
+// Free-form post: a note, photos, a voice memo — or all three. Multiple entries
+// per day append to the same post card so friends see the thread build up.
+function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, audioUrls, onSaved }) {
+  const [items, setItems] = useState([]);
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const rec = useRecorder(60);
+
+  useEffect(() => {
+    if (open) {
+      setItems((existing?.summary?.items || []).map((x) => ({ ...x })));
+      setText(""); setFiles([]); setError(""); rec.reset();
+    }
+  }, [open, existing]); // eslint-disable-line
+
+  if (!open) return null;
+
+  const canAdd = text.trim() || files.length || rec.blob;
+
+  async function save() {
+    setBusy(true); setError("");
+    try {
+      const next = [...items];
+      if (canAdd) {
+        const photo_paths = [];
+        for (const [i, f] of files.entries()) {
+          const path = `${user.id}/posts/${date}-${Date.now()}-${i}.jpg`;
+          const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
+          if (upErr) throw upErr;
+          photo_paths.push(path);
+        }
+        let audio_path = null;
+        if (rec.blob) {
+          const ext = rec.blob.type.includes("mp4") ? "m4a" : "webm";
+          audio_path = `${user.id}/posts/${date}-${Date.now()}.${ext}`;
+          const { error: aErr } = await supabase.storage.from("checkins")
+            .upload(audio_path, rec.blob, { upsert: true, contentType: rec.blob.type });
+          if (aErr) throw aErr;
+        }
+        next.push({ text: text.trim() || null, photo_paths, audio_path, at: new Date().toISOString() });
+      }
+      if (next.length) {
+        await supabase.from("feed_events").upsert(
+          { user_id: user.id, date, type: "post", summary: { items: next } },
+          { onConflict: "user_id,date,type" });
+      } else if (existing) {
+        await supabase.from("feed_events").delete()
+          .eq("user_id", user.id).eq("date", date).eq("type", "post");
+      }
+      showToast(existing ? "Post updated ✓" : "Posted ✓");
+      onSaved(); onClose();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title="New post">
+      <div className="space-y-3">
+        {items.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Already posted today</p>
+            {items.map((it, i) => (
+              <div key={i} className="flex items-start justify-between gap-2 rounded-xl bg-gray-50 p-2.5">
+                <div className="min-w-0 flex-1 text-[12px] text-gray-600">
+                  {it.text && <p className="line-clamp-2">{it.text}</p>}
+                  {it.audio_path && <p className="text-gray-400">🎙 voice memo</p>}
+                  {!!it.photo_paths?.length && <p className="text-gray-400">📸 {it.photo_paths.length} photo(s)</p>}
+                </div>
+                <button className="shrink-0 text-xs font-semibold text-red-400"
+                  onClick={() => setItems((p) => p.filter((_, xi) => xi !== i))}>
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <textarea className="input min-h-[80px]" placeholder="What's the update? Thoughts, PRs, a rant…"
+          value={text} onChange={(e) => setText(e.target.value)} />
+
+        <label className="btn-ghost block w-full cursor-pointer text-center">
+          {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} attached — tap to change` : "📸 Add photos"}
+          <input type="file" accept="image/*" multiple className="hidden"
+            onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+        </label>
+
+        <RecorderControls rec={rec} />
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <p className="text-[11px] text-gray-400">Visible to friends only.</p>
+        <button className="btn-primary w-full" disabled={busy || rec.recording || (!canAdd && !existing)} onClick={save}>
+          {busy ? "Posting…" : canAdd ? "Post" : "Save changes"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+// Nudge a friend with an optional voice memo + text roast.
+function NudgeSheet({ open, onClose, me, friend, onSent }) {
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const rec = useRecorder(MAX_MEMO_SECS);
+
+  useEffect(() => { if (open) { setMessage(""); setError(""); rec.reset(); } }, [open]); // eslint-disable-line
+
+  if (!open || !friend) return null;
 
   async function send() {
     setBusy(true); setError("");
     try {
       const date = todayStr();
       let audio_path = null;
-      if (blob) {
-        const ext = blob.type.includes("mp4") ? "m4a" : "webm";
+      if (rec.blob) {
+        const ext = rec.blob.type.includes("mp4") ? "m4a" : "webm";
         audio_path = `${me}/nudges/${date}-${Date.now()}.${ext}`;
         const { error: upErr } = await supabase.storage.from("checkins")
-          .upload(audio_path, blob, { upsert: true, contentType: blob.type });
+          .upload(audio_path, rec.blob, { upsert: true, contentType: rec.blob.type });
         if (upErr) throw upErr;
       }
       const { error: insErr } = await supabase.from("nudges")
@@ -683,31 +861,14 @@ function NudgeSheet({ open, onClose, me, friend, onSent }) {
           They haven't logged anything today. Say it to their face — 15 seconds max.
         </p>
 
-        {!recording && !blob && (
-          <button className="btn-primary w-full" onClick={startRec}>🎙 Record voice memo</button>
-        )}
-        {recording && (
-          <button className="w-full animate-pulse rounded-2xl bg-red-500 py-3 font-bold text-white active:scale-95"
-            onClick={stopRec}>
-            ⏹ Recording… {secs}s / {MAX_MEMO_SECS}s — tap to stop
-          </button>
-        )}
-        {blob && preview && (
-          <div className="rounded-xl bg-gray-50 p-2.5">
-            <audio controls src={preview} className="h-9 w-full" />
-            <button className="mt-1 text-xs font-semibold text-red-400"
-              onClick={() => { setBlob(null); setPreview(null); }}>
-              Re-record
-            </button>
-          </div>
-        )}
+        <RecorderControls rec={rec} />
 
         <input className="input" placeholder="Or type a message (optional)"
           value={message} onChange={(e) => setMessage(e.target.value)} maxLength={120} />
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="btn-primary w-full" disabled={busy || recording} onClick={send}>
-          {busy ? "Sending…" : blob || message.trim() ? "Send nudge 👀" : "Send plain nudge 👀"}
+        <button className="btn-primary w-full" disabled={busy || rec.recording} onClick={send}>
+          {busy ? "Sending…" : rec.blob || message.trim() ? "Send nudge 👀" : "Send plain nudge 👀"}
         </button>
       </div>
     </Sheet>
