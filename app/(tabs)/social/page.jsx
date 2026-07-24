@@ -9,6 +9,18 @@ import { showToast } from "@/components/Toast";
 
 const EMOJIS = ["🔥", "💪", "👑"];
 
+// Barbell icon — inherits the current text colour, so it works on both the
+// white and the green buttons with no extra styling.
+function BarbellIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      className={`${className} shrink-0`}>
+      <path d="M4 9v6M7.5 6v12M16.5 6v12M20 9v6M7.5 12h9" />
+    </svg>
+  );
+}
+
 export default function Social() {
   const { user, profile, loading } = useUser();
   const [friends, setFriends] = useState([]);       // accepted profiles
@@ -159,7 +171,11 @@ export default function Social() {
           <button aria-label="New post"
             className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-lock text-xl font-bold leading-none text-white shadow-card active:scale-95"
             onClick={() => setComposerDate(todayStr())}>+</button>
-          <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card" onClick={() => setCompareOpen(true)}>📸</button>
+          <button aria-label="Progress check-ins"
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white text-gray-900 shadow-card active:scale-95"
+            onClick={() => setCompareOpen(true)}>
+            <BarbellIcon className="h-5 w-5" />
+          </button>
           <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card" onClick={() => setFriendsOpen(true)}>
             Friends{pendingIn.length > 0 && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">{pendingIn.length}</span>}
           </button>
@@ -167,8 +183,8 @@ export default function Social() {
       </div>
 
       {isCheckinDay && !checkedInThisWeek && (
-        <button className="btn-primary mb-3 w-full" onClick={() => setCheckinOpen(true)}>
-          📸 It's check-in day — post your weekly check-in
+        <button className="btn-primary mb-3 flex w-full items-center justify-center gap-2" onClick={() => setCheckinOpen(true)}>
+          <BarbellIcon /> It's check-in day — post your weekly check-in
         </button>
       )}
 
@@ -561,7 +577,8 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="📸 Weekly check-in">
+    <Sheet open={open} onClose={onClose}
+      title={<span className="flex items-center gap-2"><BarbellIcon className="h-6 w-6" /> Weekly check-in</span>}>
       <div className="space-y-3">
         <label className="btn-ghost block w-full cursor-pointer text-center">
           {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} selected — tap to change` : "+ Add photos"}
@@ -615,7 +632,8 @@ function CompareSheet({ open, onClose, uid, onNew }) {
     ? Math.round((latest.weight - first.weight) * 10) / 10 : null;
 
   return (
-    <Sheet open={open} onClose={onClose} title="📸 Progress check-ins">
+    <Sheet open={open} onClose={onClose}
+      title={<span className="flex items-center gap-2"><BarbellIcon className="h-6 w-6" /> Progress check-ins</span>}>
       <button className="btn-primary mb-3 w-full" onClick={onNew}>+ New check-in</button>
       {delta !== null && (
         <p className="mb-3 rounded-xl bg-lock-faint px-3 py-2 text-center text-sm font-semibold text-lock">
