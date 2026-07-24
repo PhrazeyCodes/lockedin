@@ -54,7 +54,10 @@ export default function Social() {
       // signed urls for checkin + photo-update photos
       const paths = [];
       for (const e of evs) {
-        if (e.type === "checkin" && e.summary?.photo_path) paths.push(e.summary.photo_path);
+        if (e.type === "checkin") {
+          const cp = e.summary?.photo_paths?.length ? e.summary.photo_paths : [e.summary?.photo_path];
+          for (const p of cp) if (p) paths.push(p);
+        }
         if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
       }
       const urls = {};
@@ -330,12 +333,20 @@ function EventLine({ e, p, photoUrls }) {
     const delta = s.weight && p.start_weight && p.goal_weight
       ? `${Math.abs(p.start_weight - s.weight).toFixed(1)} lb ${p.start_weight > p.goal_weight ? "down" : "up"} toward ${p.goal_weight}`
       : null;
+    const shots = (s.photo_paths?.length ? s.photo_paths : [s.photo_path]).filter((x) => x && photoUrls[x]);
     return (
       <div>
         <p>🎯 Checked in: <b>{s.weight} lb</b>{delta && ` — ${delta}`}</p>
         {s.caption && <p className="text-[12px] italic text-gray-600">"{s.caption}"</p>}
-        {s.photo_path && photoUrls[s.photo_path] && (
-          <img src={photoUrls[s.photo_path]} alt="check-in" className="mt-1.5 max-h-72 w-full rounded-xl object-cover" />
+        {shots.length === 1 && (
+          <img src={photoUrls[shots[0]]} alt="check-in" className="mt-1.5 max-h-72 w-full rounded-xl object-cover" />
+        )}
+        {shots.length > 1 && (
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            {shots.map((p) => (
+              <img key={p} src={photoUrls[p]} alt="check-in" className="aspect-[3/4] w-full rounded-xl object-cover" />
+            ))}
+          </div>
         )}
       </div>
     );
@@ -439,25 +450,34 @@ function FriendsSheet({ open, onClose, me, friends, pendingIn, onChanged, myUser
 }
 
 function CheckinSheet({ open, onClose, user, profile, onPosted }) {
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [weight, setWeight] = useState("");
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => { if (open) { setFiles([]); setWeight(""); setCaption(""); setError(""); } }, [open]);
+
   async function post() {
     setBusy(true); setError("");
     try {
       const date = todayStr();
-      let photo_path = null;
-      if (file) {
-        photo_path = `${user.id}/${date}-${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage.from("checkins").upload(photo_path, file, { upsert: true });
+      const paths = [];
+      for (const [i, f] of files.entries()) {
+        const path = `${user.id}/${date}-${Date.now()}-${i}.jpg`;
+        const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
         if (upErr) throw upErr;
+        paths.push(path);
       }
-      await supabase.from("checkins").insert({ user_id: user.id, date, photo_path, weight: weight ? +weight : null, caption });
+      // One checkins row per photo so every angle shows in the progress grid.
+      const w = weight ? +weight : null;
+      const rows = paths.length
+        ? paths.map((p) => ({ user_id: user.id, date, photo_path: p, weight: w, caption }))
+        : [{ user_id: user.id, date, photo_path: null, weight: w, caption }];
+      await supabase.from("checkins").insert(rows);
       await supabase.from("feed_events").upsert(
-        { user_id: user.id, date, type: "checkin", summary: { weight: weight ? +weight : null, caption, photo_path } },
+        { user_id: user.id, date, type: "checkin",
+          summary: { weight: w, caption, photo_path: paths[0] || null, photo_paths: paths } },
         { onConflict: "user_id,date,type" });
       showToast("Check-in posted ✓");
       onPosted();
@@ -469,14 +489,22 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
   return (
     <Sheet open={open} onClose={onClose} title="📸 Weekly check-in">
       <div className="space-y-3">
-        <input type="file" accept="image/*" className="input"
-          onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <label className="btn-ghost block w-full cursor-pointer text-center">
+          {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} selected — tap to change` : "+ Add photos"}
+          <input type="file" accept="image/*" multiple className="hidden"
+            onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+        </label>
+        {files.length > 1 && (
+          <p className="text-[11px] text-gray-400">
+            Front, side, back — all of them post to the feed and your progress grid.
+          </p>
+        )}
         <input className="input" type="number" inputMode="decimal" placeholder={`Current weight (${profile?.unit_pref || "lb"})`}
           value={weight} onChange={(e) => setWeight(e.target.value)} />
         <input className="input" placeholder="Caption (optional)" value={caption} onChange={(e) => setCaption(e.target.value)} />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <p className="text-[11px] text-gray-400">Visible to friends only.</p>
-        <button className="btn-primary w-full" disabled={busy || (!file && !weight)} onClick={post}>
+        <button className="btn-primary w-full" disabled={busy || (!files.length && !weight)} onClick={post}>
           {busy ? "Posting…" : "Post check-in"}
         </button>
       </div>
