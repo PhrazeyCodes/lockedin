@@ -70,7 +70,7 @@ export default function Settings() {
     setProfile({ ...profile, ...patch });
     setTargets(structuredClone(clean));
     setSaved(true);
-    showToast("Settings saved ✓");
+    showToast("Settings saved");
     setTimeout(() => setSaved(false), 1500);
   }
 
@@ -107,7 +107,7 @@ export default function Settings() {
         <div className="flex gap-2">
           <button className="btn-primary flex-1"
             onClick={() => { setUserApiKey(apiKey); setKeySaved(true); setTimeout(() => setKeySaved(false), 1500); }}>
-            {keySaved ? "Saved ✓" : "Save key"}
+            {keySaved ? "Saved" : "Save key"}
           </button>
           {apiKey && (
             <button className="btn-ghost text-red-500"
@@ -117,7 +117,7 @@ export default function Settings() {
           )}
         </div>
       </div>
-      <button className="btn-primary w-full" onClick={save}>{saved ? "Saved ✓" : "Save"}</button>
+      <button className="btn-primary w-full" onClick={save}>{saved ? "Saved" : "Save"}</button>
       <button className="btn-ghost w-full text-red-500"
         onClick={async () => { await supabase.auth.signOut(); router.replace("/login"); }}>
         Sign out

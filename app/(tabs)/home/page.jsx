@@ -10,6 +10,7 @@ import FoodEditor from "@/components/FoodEditor";
 import Sheet from "@/components/Sheet";
 import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
+import Icon, { REACTION_ICONS } from "@/components/Icon";
 import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 
@@ -119,8 +120,12 @@ export default function Home() {
           {fmtDate(date)} ▾
         </button>
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-white px-3 py-2 text-sm font-semibold shadow-card">🔥 {streak}</span>
-          <Link href="/settings" className="rounded-full bg-white p-2 shadow-card">⚙️</Link>
+          <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-sm font-semibold shadow-card">
+            <Icon name="flame" className="h-4 w-4 text-lock" /> {streak}
+          </span>
+          <Link href="/settings" aria-label="Settings" className="rounded-full bg-white p-2.5 text-gray-700 shadow-card">
+            <Icon name="sliders" className="h-[18px] w-[18px]" />
+          </Link>
         </div>
       </div>
 
@@ -151,9 +156,10 @@ export default function Home() {
         </div>
         <div className="flex justify-between">
           {Array.from({ length: 8 }, (_, i) => (
-            <button key={i} className="text-2xl transition active:scale-90"
+            <button key={i} aria-label={`${i + 1} cups`} className="transition active:scale-90"
               onClick={() => update((d) => { d.water = i + 1 === d.water ? i : i + 1; return d; })}>
-              {i < day.water ? "💧" : "◯"}
+              <Icon name={i < day.water ? "droplet" : "circleEmpty"}
+                className={`h-6 w-6 ${i < day.water ? "text-lock-light" : "text-gray-300"}`} />
             </button>
           ))}
         </div>
@@ -169,7 +175,9 @@ export default function Home() {
               className="flex w-full items-center gap-3 rounded-xl bg-gray-50 p-2.5 text-left active:bg-gray-100">
               {m.photo
                 ? <img src={m.photo} alt="" className="h-11 w-11 rounded-lg object-cover" />
-                : <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-lock-faint text-xl">🍽</span>}
+                : <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-lock-faint text-lock">
+                    <Icon name="bowl" className="h-5 w-5" />
+                  </span>}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold">{m.name}</div>
                 <div className="text-[11px] text-gray-500">P{Math.round(m.p)} · C{Math.round(m.c)} · F{Math.round(m.f)}</div>
@@ -194,25 +202,26 @@ export default function Home() {
       </button>
 
       <Logger open={loggerOpen} onClose={() => setLoggerOpen(false)}
-        onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged ✓"); }} />
+        onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged"); }} />
 
       {/* Activity popup: new reactions/comments on your posts */}
       {activity && !nudgers && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
           <div className="absolute inset-0 bg-black/40" onClick={() => setActivity(null)} />
           <div className="animate-pop relative w-full max-w-xs rounded-3xl bg-white p-5 shadow-xl">
-            <div className="text-center text-3xl">🎉</div>
+            <div className="flex justify-center text-lock"><Icon name="sparkles" className="h-8 w-8" /></div>
             <h2 className="mt-1 text-center text-lg font-bold">While you were away</h2>
             <div className="mt-3 max-h-60 space-y-1.5 overflow-y-auto">
               {activity.map((a, i) => (
                 <div key={i} className="rounded-xl bg-gray-50 px-3 py-2 text-sm">
                   {a.comment
                     ? <><b>{a.who}</b> commented on {a.on}: <span className="italic text-gray-600">"{a.comment}"</span></>
-                    : <><b>{a.who}</b> reacted {a.emoji} to {a.on}</>}
+                    : <span className="flex items-center gap-1"><b>{a.who}</b> reacted
+                        <Icon name={REACTION_ICONS[a.emoji] || "flame"} className="h-4 w-4 text-lock" /> to {a.on}</span>}
                 </div>
               ))}
             </div>
-            <button className="btn-primary mt-4 w-full" onClick={() => setActivity(null)}>Nice 🔒</button>
+            <button className="btn-primary mt-4 w-full" onClick={() => setActivity(null)}>Nice</button>
           </div>
         </div>
       )}
@@ -222,11 +231,11 @@ export default function Home() {
         <div className="fixed inset-0 z-50 flex items-center justify-center px-8">
           <div className="absolute inset-0 bg-black/40" onClick={() => setNudgers(null)} />
           <div className="animate-pop relative w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-xl">
-            <div className="text-4xl">👀</div>
-            <h2 className="mt-2 text-lg font-bold">You got nudged!</h2>
+            <div className="flex justify-center text-amber-500"><Icon name="eye" className="h-9 w-9" /></div>
+            <h2 className="mt-2 text-lg font-bold">You got nudged</h2>
             <p className="mt-1 text-sm text-gray-500">{nudgers} noticed you haven't logged anything today.</p>
             <p className="mt-1 font-semibold text-lock">Time to lock in.</p>
-            <button className="btn-primary mt-4 w-full" onClick={() => setNudgers(null)}>Locking in 🔒</button>
+            <button className="btn-primary mt-4 w-full" onClick={() => setNudgers(null)}>Locking in</button>
           </div>
         </div>
       )}
@@ -253,7 +262,7 @@ export default function Home() {
 function Splash() {
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="animate-pulse text-4xl">🔒</div>
+      <Icon name="lock" className="h-10 w-10 animate-pulse text-lock" />
     </div>
   );
 }

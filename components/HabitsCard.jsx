@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Icon from "./Icon";
 
 const NS = "lockedin_v1:habitlist";
 const DEFAULTS = ["Supplement stack", "8h sleep", "1 gallon water", "215g protein"];
@@ -54,14 +55,15 @@ export default function HabitsCard({ habits, weekMarks, onToggle }) {
               <button onClick={() => onToggle(h)}
                 className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition active:scale-[0.98] ${done ? "bg-lock-faint" : "bg-gray-50"}`}>
                 <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] ${done ? "animate-pop border-lock-light bg-lock-light text-white" : "border-gray-300"}`}>
-                  {done && "✓"}
+                  {done && <Icon name="check" className="h-3 w-3" strokeWidth={3} />}
                 </span>
                 <span className={`truncate text-sm font-medium ${done ? "text-lock" : ""}`}>{h}</span>
               </button>
               {editing ? (
-                <button className="shrink-0 rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-500 active:scale-90"
+                <button aria-label="Remove habit"
+                  className="shrink-0 rounded-full bg-red-50 p-1.5 text-red-500 active:scale-90"
                   onClick={() => persist(list.filter((x) => x !== h))}>
-                  ✕
+                  <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.4} />
                 </button>
               ) : (
                 <div className="flex shrink-0 gap-0.5">

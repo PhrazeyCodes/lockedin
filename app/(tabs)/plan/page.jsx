@@ -5,6 +5,7 @@ import { loadDay, saveDay, syncFeed, blankDay } from "@/lib/store";
 import { todayStr, addDays, fmtDate } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import HistoryCalendar from "@/components/HistoryCalendar";
+import Icon from "@/components/Icon";
 import { showToast } from "@/components/Toast";
 
 const CATS = {
@@ -132,7 +133,9 @@ export default function Plan() {
                     opacity: b.done ? 0.55 : 1,
                   }}
                   onClick={(e) => { e.stopPropagation(); setEditing(b); }}>
-                  <div className="text-xs font-bold leading-tight">{b.done && "✓ "}{b.title || b.cat}</div>
+                  <div className="flex items-center gap-1 text-xs font-bold leading-tight">
+                    {b.done && <Icon name="check" className="h-3 w-3" strokeWidth={3} />}{b.title || b.cat}
+                  </div>
                   <div className="text-[10px] opacity-80">{fmtMin(b.start)}–{fmtMin(b.end)}</div>
                 </button>
               ))}
@@ -154,9 +157,9 @@ export default function Plan() {
             return d;
           });
           setEditing(null);
-          showToast(b.id ? "Block updated ✓" : "Block added ✓");
+          showToast(b.id ? "Block updated" : "Block added");
         }}
-        onDelete={(b) => { update((d) => { d.blocks = d.blocks.filter((x) => x.id !== b.id); return d; }); setEditing(null); showToast("Block deleted ✓"); }}
+        onDelete={(b) => { update((d) => { d.blocks = d.blocks.filter((x) => x.id !== b.id); return d; }); setEditing(null); showToast("Block deleted"); }}
         onToggle={(b) => { update((d) => { d.blocks = d.blocks.map((x) => (x.id === b.id ? { ...x, done: !x.done } : x)); return d; }); setEditing(null); }} />
 
       <TemplatesSheet open={tplOpen} onClose={() => setTplOpen(false)} day={day}
@@ -166,7 +169,7 @@ export default function Plan() {
             return d;
           });
           setTplOpen(false);
-          showToast(`"${tpl.name}" applied ✓`);
+          showToast(`"${tpl.name}" applied`);
         }} />
 
       <HistoryCalendar open={calOpen} onClose={() => setCalOpen(false)} uid={user?.id} onPick={setDate} />
@@ -214,7 +217,7 @@ function BlockEditor({ block, onClose, onSave, onDelete, onToggle }) {
         </div>
         {b.id && (
           <div className="flex gap-2">
-            <button className="btn-ghost flex-1" onClick={() => onToggle(b)}>{b.done ? "Mark not done" : "Mark done ✓"}</button>
+            <button className="btn-ghost flex-1" onClick={() => onToggle(b)}>{b.done ? "Mark not done" : "Mark done"}</button>
             <button className="btn-ghost flex-1 text-red-500" onClick={() => onDelete(b)}>Delete</button>
           </div>
         )}
@@ -254,7 +257,10 @@ function TemplatesSheet({ open, onClose, day, onApply }) {
               <span className="font-semibold">{t.name}</span>
               <div className="flex gap-2">
                 <button className="text-sm font-medium text-lock-light" onClick={() => onApply(t)}>Apply</button>
-                <button className="text-sm text-red-400" onClick={() => { const n = tpls.filter((_, j) => j !== i); setTpls(n); saveTemplates(n); }}>✕</button>
+                <button aria-label="Delete template" className="p-0.5 text-red-400"
+                  onClick={() => { const n = tpls.filter((_, j) => j !== i); setTpls(n); saveTemplates(n); }}>
+                  <Icon name="x" className="h-4 w-4" strokeWidth={2.2} />
+                </button>
               </div>
             </div>
             <div className="mt-2 flex gap-1">
@@ -302,14 +308,17 @@ function Tasks({ day, update }) {
           <div key={t.id} className="flex items-center gap-2 rounded-xl bg-white p-3 shadow-card">
             <button onClick={() => update((d) => { d.tasks = d.tasks.map((x) => x.id === t.id ? { ...x, done: !x.done } : x); return d; })}
               className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs ${t.done ? "animate-pop border-lock-light bg-lock-light text-white" : "border-gray-300"}`}>
-              {t.done && "✓"}
+              {t.done && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={3} />}
             </button>
             <span className={`flex-1 text-sm font-medium ${t.done ? "text-gray-400 line-through" : ""}`}>
               {t.title}
               {t.carry > 0 && <span className="ml-1.5 text-[10px] text-amber-500">↻{t.carry}</span>}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${PRIO[t.priority]}`}>{t.priority}</span>
-            <button className="text-gray-300" onClick={() => update((d) => { d.tasks = d.tasks.filter((x) => x.id !== t.id); return d; })}>✕</button>
+            <button aria-label="Delete task" className="p-1 text-gray-300"
+              onClick={() => update((d) => { d.tasks = d.tasks.filter((x) => x.id !== t.id); return d; })}>
+              <Icon name="x" className="h-4 w-4" strokeWidth={2.2} />
+            </button>
           </div>
         ))}
       </div>

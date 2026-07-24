@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Sheet from "./Sheet";
+import Icon from "./Icon";
 import FoodEditor from "./FoodEditor";
 import { scanImage, describeFood, searchUSDA, lookupBarcode, fileToScanPayload } from "@/lib/nutrition";
 import { getRecents } from "@/lib/store";
@@ -33,12 +34,12 @@ export default function Logger({ open, onClose, onLog }) {
   }
 
   const MENU = [
-    { icon: "📸", title: "Scan food", sub: "Photo → AI macros", action: () => fileRef.current?.click() },
-    { icon: "💬", title: "Describe it", sub: "Type the meal, AI breaks it down", action: () => setView("describe") },
-    { icon: "▦", title: "Barcode", sub: "Scan a package", action: () => setView("barcode") },
-    { icon: "🔍", title: "Search", sub: "USDA food database", action: () => setView("search") },
-    { icon: "⚡️", title: "Quick add", sub: "Enter macros directly", action: () => setView("quick") },
-    { icon: "🕐", title: "Recents", sub: "One-tap relog", action: () => setView("recents") },
+    { icon: "camera", title: "Scan food", sub: "Photo → AI macros", action: () => fileRef.current?.click() },
+    { icon: "message", title: "Describe it", sub: "Type the meal, AI breaks it down", action: () => setView("describe") },
+    { icon: "image", title: "Barcode", sub: "Scan a package", action: () => setView("barcode") },
+    { icon: "search", title: "Search", sub: "USDA food database", action: () => setView("search") },
+    { icon: "zap", title: "Quick add", sub: "Enter macros directly", action: () => setView("quick") },
+    { icon: "clock", title: "Recents", sub: "One-tap relog", action: () => setView("recents") },
   ];
 
   return (
@@ -52,7 +53,7 @@ export default function Logger({ open, onClose, onLog }) {
           {MENU.map((m) => (
             <button key={m.title} onClick={m.action}
               className="rounded-2xl bg-gray-50 p-4 text-left transition active:scale-95">
-              <div className="text-2xl">{m.icon}</div>
+              <Icon name={m.icon} className="h-6 w-6 text-gray-700" />
               <div className="mt-1 font-semibold">{m.title}</div>
               <div className="text-[11px] text-gray-500">{m.sub}</div>
             </button>

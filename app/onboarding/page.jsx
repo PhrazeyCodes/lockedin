@@ -2,11 +2,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Icon from "@/components/Icon";
 
 const GOALS = [
-  { id: "cut", label: "Cut", emoji: "🔥" },
-  { id: "bulk", label: "Bulk", emoji: "📈" },
-  { id: "maintain", label: "Maintain", emoji: "⚖️" },
+  { id: "cut", label: "Cut", icon: "flame" },
+  { id: "bulk", label: "Bulk", icon: "trendingUp" },
+  { id: "maintain", label: "Maintain", icon: "scale" },
 ];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -70,7 +71,7 @@ export default function Onboarding() {
             <button type="button" key={g.id}
               className={`btn ${goalType === g.id ? "bg-lock text-white" : "bg-gray-100"}`}
               onClick={() => setGoalType(g.id)}>
-              {g.emoji} {g.label}
+              <span className="flex items-center justify-center gap-1.5"><Icon name={g.icon} className="h-[18px] w-[18px]" /> {g.label}</span>
             </button>
           ))}
         </div>
@@ -89,7 +90,7 @@ export default function Onboarding() {
           </select>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? "…" : "Lock in 🔒"}</button>
+        <button className="btn-primary w-full" disabled={busy}>{busy ? "…" : "Lock in"}</button>
       </form>
     </div>
   );

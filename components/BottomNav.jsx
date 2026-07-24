@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Icon from "./Icon";
 
 const TABS = [
-  { href: "/home", label: "Home", icon: "🏠" },
-  { href: "/plan", label: "Plan", icon: "🗓" },
-  { href: "/lift", label: "Lift", icon: "🏋️" },
-  { href: "/journal", label: "Journal", icon: "📓" },
-  { href: "/social", label: "Social", icon: "👥" },
+  { href: "/home", label: "Home", icon: "home" },
+  { href: "/plan", label: "Plan", icon: "calendar" },
+  { href: "/lift", label: "Lift", icon: "barbell" },
+  { href: "/journal", label: "Journal", icon: "notebook" },
+  { href: "/social", label: "Social", icon: "users" },
 ];
 
 export default function BottomNav() {
@@ -20,7 +21,7 @@ export default function BottomNav() {
           return (
             <Link key={t.href} href={t.href}
               className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${active ? "text-lock" : "text-gray-400"}`}>
-              <span className={`text-xl ${active ? "" : "grayscale opacity-60"}`}>{t.icon}</span>
+              <Icon name={t.icon} className="h-[22px] w-[22px]" strokeWidth={active ? 2 : 1.7} />
               {t.label}
             </Link>
           );

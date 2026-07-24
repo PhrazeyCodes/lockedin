@@ -7,6 +7,7 @@ import Sheet from "@/components/Sheet";
 import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 import HistoryCalendar from "@/components/HistoryCalendar";
+import Icon from "@/components/Icon";
 
 const SESSIONS = {
   Push: "#dc2626", Pull: "#2563eb", Legs: "#7c3aed", "Shoulders & Arms": "#f59e0b", Rest: "#64748b",
@@ -161,7 +162,7 @@ export default function Lift() {
 
       {lift?.type === "Rest" && (
         <div className="card text-center">
-          <div className="text-4xl">😴</div>
+          <div className="flex justify-center text-blue-500"><Icon name="bed" className="h-9 w-9" /></div>
           <p className="mt-2 font-bold">Rest day logged</p>
           <p className="text-sm text-gray-500">Home is now showing rest-day macros.</p>
           <button className="btn-ghost mt-3 w-full" onClick={() => setPickerOpen(true)}>Change</button>
@@ -188,7 +189,10 @@ export default function Lift() {
               <div className="mb-1 flex items-center justify-between">
                 <input className="flex-1 bg-transparent font-bold outline-none" value={ex.name}
                   onChange={(e) => update((d) => { d.lift.exercises[ei].name = e.target.value; return d; })} />
-                <button className="text-gray-300" onClick={() => update((d) => { d.lift.exercises.splice(ei, 1); return d; })}>✕</button>
+                <button aria-label="Delete exercise" className="p-1 text-gray-300 active:text-red-400"
+                  onClick={() => update((d) => { d.lift.exercises.splice(ei, 1); return d; })}>
+                  <Icon name="x" className="h-4 w-4" strokeWidth={2.2} />
+                </button>
               </div>
               {ex.target && <p className="mb-2 text-[11px] text-gray-400">{ex.target}</p>}
               <div className="space-y-1.5">
@@ -202,12 +206,12 @@ export default function Lift() {
                     <button
                       className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 ${s.done ? "animate-pop border-lock-light bg-lock-light text-white" : "border-gray-200"}`}
                       onClick={() => update((d) => { d.lift.exercises[ei].sets[si].done = !s.done; return d; })}>
-                      ✓
+                      <Icon name="check" className="h-4 w-4" strokeWidth={2.6} />
                     </button>
                     <button aria-label="Delete set"
                       className="flex h-9 w-6 items-center justify-center text-gray-300 active:scale-90 active:text-red-400"
                       onClick={() => update((d) => { d.lift.exercises[ei].sets.splice(si, 1); return d; })}>
-                      ✕
+                      <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} />
                     </button>
                   </div>
                 ))}
@@ -249,10 +253,10 @@ export default function Lift() {
               }));
               localStorage.setItem(TPL_KEY, JSON.stringify(tpls));
               setTplSaved(true);
-              showToast(`${lift.type} template saved ✓`);
+              showToast(`${lift.type} template saved`);
               setTimeout(() => setTplSaved(false), 1800);
             }}>
-            {tplSaved ? "Template saved ✓" : `Save as my ${lift.type} template`}
+            {tplSaved ? "Template saved" : `Save as my ${lift.type} template`}
           </button>
         </>
       )}
@@ -267,18 +271,19 @@ export default function Lift() {
                 onClick={() => {
                   update((d) => { d.lift = t === "Rest" ? { type: "Rest" } : buildSession(t); return d; });
                   setPickerOpen(false);
-                  showToast(`${t} session started ✓`);
+                  showToast(`${t} session started`);
                 }}>
                 {t}
               </button>
               {customs.includes(t) && (
                 <button
-                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-[10px] text-white"
+                  aria-label={`Remove ${t}`}
+                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-white"
                   onClick={() => {
                     const next = customs.filter((x) => x !== t);
                     setCustoms(next); saveCustomSessions(next);
                   }}>
-                  ✕
+                  <Icon name="x" className="h-3 w-3" strokeWidth={2.6} />
                 </button>
               )}
             </div>
@@ -293,7 +298,7 @@ export default function Lift() {
               const t = newType.trim();
               const next = [...customs, t];
               setCustoms(next); saveCustomSessions(next); setNewType("");
-              showToast(`"${t}" added ✓`);
+              showToast(`"${t}" added`);
             }}>
             Add
           </button>

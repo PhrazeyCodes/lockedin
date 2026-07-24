@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Icon from "@/components/Icon";
 
 export default function Login() {
   const [mode, setMode] = useState("signin");
@@ -35,7 +36,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen flex-col justify-center px-6 pb-20">
       <div className="mb-10 text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-lock text-3xl">🔒</div>
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-lock text-white"><Icon name="lock" className="h-8 w-8" /></div>
         <h1 className="text-3xl font-bold tracking-tight">LockedIn</h1>
         <p className="mt-1 text-gray-500">Show up. Your friends are watching.</p>
       </div>

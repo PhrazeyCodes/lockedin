@@ -6,9 +6,17 @@ import { markJournalDone } from "@/lib/store";
 import { todayStr } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import HistoryCalendar from "@/components/HistoryCalendar";
+import Icon, { MOOD_VALUES, MOOD_ICONS } from "@/components/Icon";
 import { showToast } from "@/components/Toast";
 
-const MOODS = ["😞", "😕", "😐", "🙂", "😄"];
+// Stored values stay the original emoji so existing entries keep working;
+// only the rendering is an icon now.
+const MOODS = MOOD_VALUES;
+
+function Mood({ value, className = "h-5 w-5" }) {
+  if (!value || !MOOD_ICONS[value]) return null;
+  return <Icon name={MOOD_ICONS[value]} className={className} />;
+}
 
 export default function Journal() {
   const { user, loading } = useUser();
@@ -43,7 +51,7 @@ export default function Journal() {
     await supabase.from("journal").upsert(row, { onConflict: "user_id,date" });
     await markJournalDone(user.id, date);
     setFlow(null);
-    showToast("Journal saved ✓");
+    showToast("Journal saved");
     refresh();
   }
 
@@ -54,28 +62,30 @@ export default function Journal() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Journal</h1>
         <div className="flex items-center gap-2">
-          <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card active:scale-95"
-            onClick={() => setCalOpen(true)}>🗓</button>
-          <span className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card">📓 {streak} day streak</span>
+          <button aria-label="History" className="rounded-full bg-white p-2 text-gray-700 shadow-card active:scale-95"
+            onClick={() => setCalOpen(true)}><Icon name="calendar" className="h-[18px] w-[18px]" /></button>
+          <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card">
+            <Icon name="notebook" className="h-4 w-4 text-lock" /> {streak} day streak
+          </span>
         </div>
       </div>
 
-      <p className="mb-3 rounded-xl bg-gray-100 px-3 py-2 text-[11px] text-gray-500">
-        🔒 Always private. Friends only ever see "journaled today ✓".
+      <p className="mb-3 flex items-center gap-1.5 rounded-xl bg-gray-100 px-3 py-2 text-[11px] text-gray-500">
+        <Icon name="lock" className="h-3.5 w-3.5" /> Always private. Friends only ever see "journaled today".
       </p>
 
       <div className="mb-3 grid grid-cols-2 gap-3">
         <button onClick={() => setFlow("am")}
           className={`card text-left active:scale-95 ${entry?.am ? "ring-2 ring-lock-light" : ""}`}>
-          <div className="text-2xl">🌅</div>
+          <Icon name="sunrise" className="h-6 w-6 text-gray-700" />
           <div className="mt-1 font-bold">Morning</div>
-          <div className="text-[11px] text-gray-500">{entry?.am ? "Done ✓ — tap to edit" : "Intentions · gratitude · focus"}</div>
+          <div className="text-[11px] text-gray-500">{entry?.am ? "Done — tap to edit" : "Intentions · gratitude · focus"}</div>
         </button>
         <button onClick={() => setFlow("pm")}
           className={`card text-left active:scale-95 ${entry?.pm ? "ring-2 ring-lock-light" : ""}`}>
-          <div className="text-2xl">🌙</div>
+          <Icon name="moon" className="h-6 w-6 text-gray-700" />
           <div className="mt-1 font-bold">Night</div>
-          <div className="text-[11px] text-gray-500">{entry?.pm ? "Done ✓ — tap to edit" : "Wins · improve · thoughts"}</div>
+          <div className="text-[11px] text-gray-500">{entry?.pm ? "Done — tap to edit" : "Wins · improve · thoughts"}</div>
         </button>
       </div>
 
@@ -92,17 +102,22 @@ export default function Journal() {
         {history.map((h) => (
           <button key={h.date} className="card flex w-full items-center gap-3 py-3 text-left active:scale-[0.99]"
             onClick={() => setViewing(h)}>
-            <span className="text-xl">
+            <span className="flex items-center gap-1 text-gray-600">
               {(h.am?.mood || h.pm?.mood)
-                ? <>{h.am?.mood && <>🌅{h.am.mood}</>}{h.pm?.mood && <> 🌙{h.pm.mood}</>}</>
-                : (h.mood || "·")}
+                ? <>
+                    {h.am?.mood && <><Icon name="sunrise" className="h-4 w-4" /><Mood value={h.am.mood} /></>}
+                    {h.pm?.mood && <><Icon name="moon" className="h-4 w-4" /><Mood value={h.pm.mood} /></>}
+                  </>
+                : (h.mood ? <Mood value={h.mood} /> : <span className="text-gray-300">·</span>)}
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold">
                 {new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               </div>
-              <div className="text-[11px] text-gray-500">
-                {h.am && "🌅 "}{h.pm && "🌙 "}{h.weight && `⚖️ ${h.weight} lb`}
+              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                {h.am && <Icon name="sunrise" className="h-3.5 w-3.5" />}
+                {h.pm && <Icon name="moon" className="h-3.5 w-3.5" />}
+                {h.weight && <><Icon name="scale" className="h-3.5 w-3.5" /> {h.weight} lb</>}
               </div>
             </div>
             {h.am?.focus && <span className="max-w-[40%] truncate text-[11px] text-gray-400">"{h.am.focus}"</span>}
@@ -132,13 +147,15 @@ function EntryViewer({ entry, onClose, onEdit }) {
     <Sheet open onClose={onClose}
       title={new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}>
       <div className="mb-3 flex items-center gap-3 text-sm text-gray-500">
-        {!entry.am?.mood && !entry.pm?.mood && entry.mood && <span className="text-2xl">{entry.mood}</span>}
-        {entry.weight && <span>⚖️ {entry.weight} lb</span>}
+        {!entry.am?.mood && !entry.pm?.mood && entry.mood && <Mood value={entry.mood} className="h-6 w-6" />}
+        {entry.weight && <span className="flex items-center gap-1.5"><Icon name="scale" className="h-4 w-4" /> {entry.weight} lb</span>}
       </div>
       {entry.am && (
         <div className="mb-3">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-bold">🌅 Morning {entry.am.mood && <span className="ml-1">{entry.am.mood}</span>}</h3>
+            <h3 className="flex items-center gap-1.5 font-bold">
+              <Icon name="sunrise" className="h-[18px] w-[18px]" /> Morning <Mood value={entry.am.mood} />
+            </h3>
             {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("am")}>Edit</button>}
           </div>
           {AM.map(([k, label]) => entry.am[k] && (
@@ -152,7 +169,9 @@ function EntryViewer({ entry, onClose, onEdit }) {
       {entry.pm && (
         <div className="mb-2">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-bold">🌙 Night {entry.pm.mood && <span className="ml-1">{entry.pm.mood}</span>}</h3>
+            <h3 className="flex items-center gap-1.5 font-bold">
+              <Icon name="moon" className="h-[18px] w-[18px]" /> Night <Mood value={entry.pm.mood} />
+            </h3>
             {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("pm")}>Edit</button>}
           </div>
           {PM.map(([k, label]) => entry.pm[k] && (
@@ -194,7 +213,10 @@ function Flow({ flow, entry, onClose, onSave }) {
     : [["wins", "Wins today"], ["improve", "What to improve"], ["thoughts", "Free thoughts"]];
 
   return (
-    <Sheet open onClose={onClose} title={am ? "🌅 Morning" : "🌙 Night"}>
+    <Sheet open onClose={onClose}
+      title={<span className="flex items-center gap-2">
+        <Icon name={am ? "sunrise" : "moon"} className="h-5 w-5" /> {am ? "Morning" : "Night"}
+      </span>}>
       <div className="space-y-3">
         {fields.map(([k, label]) => (
           <div key={k}>
@@ -206,9 +228,9 @@ function Flow({ flow, entry, onClose, onSave }) {
         <div className="flex items-center justify-between">
           <div className="flex gap-1">
             {MOODS.map((m) => (
-              <button key={m} onClick={() => setMood(m)}
-                className={`rounded-full p-1.5 text-2xl ${mood === m ? "bg-lock-faint ring-2 ring-lock-light" : "opacity-50"}`}>
-                {m}
+              <button key={m} aria-label={`Mood ${MOODS.indexOf(m) + 1} of 5`} onClick={() => setMood(m)}
+                className={`rounded-full p-1.5 ${mood === m ? "bg-lock-faint text-lock ring-2 ring-lock-light" : "text-gray-400"}`}>
+                <Mood value={m} className="h-7 w-7" />
               </button>
             ))}
           </div>

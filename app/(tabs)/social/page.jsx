@@ -6,20 +6,10 @@ import { todayStr, addDays } from "@/lib/dates";
 import { dayScore, gradeFor } from "@/lib/score";
 import Sheet from "@/components/Sheet";
 import { showToast } from "@/components/Toast";
+import Icon, { REACTION_VALUES, REACTION_ICONS } from "@/components/Icon";
 
-const EMOJIS = ["🔥", "💪", "👑"];
-
-// Barbell icon — inherits the current text colour, so it works on both the
-// white and the green buttons with no extra styling.
-function BarbellIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-      className={`${className} shrink-0`}>
-      <path d="M4 9v6M7.5 6v12M16.5 6v12M20 9v6M7.5 12h9" />
-    </svg>
-  );
-}
+// Reaction values stay as stored emoji for backwards compatibility; rendered as icons.
+const EMOJIS = REACTION_VALUES;
 
 export default function Social() {
   const { user, profile, loading } = useUser();
@@ -174,7 +164,7 @@ export default function Social() {
           <button aria-label="Progress check-ins"
             className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white text-gray-900 shadow-card active:scale-95"
             onClick={() => setCompareOpen(true)}>
-            <BarbellIcon className="h-5 w-5" />
+            <Icon name="barbell" className="h-5 w-5" />
           </button>
           <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold shadow-card" onClick={() => setFriendsOpen(true)}>
             Friends{pendingIn.length > 0 && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">{pendingIn.length}</span>}
@@ -184,14 +174,14 @@ export default function Social() {
 
       {isCheckinDay && !checkedInThisWeek && (
         <button className="btn-primary mb-3 flex w-full items-center justify-center gap-2" onClick={() => setCheckinOpen(true)}>
-          <BarbellIcon /> It's check-in day — post your weekly check-in
+          <Icon name="barbell" /> It's check-in day — post your weekly check-in
         </button>
       )}
 
       {/* Nudges received today */}
       {myNudges.length > 0 && (
         <div className="card mb-3 bg-amber-50">
-          <h3 className="mb-1.5 font-bold">👀 You got nudged</h3>
+          <h3 className="mb-1.5 flex items-center gap-1.5 font-bold"><Icon name="eye" className="h-[18px] w-[18px]" /> You got nudged</h3>
           <div className="space-y-2">
             {myNudges.map((n) => (
               <div key={n.from_user}>
@@ -226,7 +216,7 @@ export default function Social() {
             <div key={p.id} className="flex items-center gap-2 text-sm">
               <span className="w-5 text-center font-bold text-gray-400">{i + 1}</span>
               <span className="flex-1 font-semibold">{p.display_name}{p.id === user.id && " (you)"}</span>
-              <span className="text-[11px] text-gray-500">🔥 {p.streak}</span>
+              <span className="flex items-center gap-0.5 text-[11px] text-gray-500"><Icon name="flame" className="h-3.5 w-3.5" /> {p.streak}</span>
               <span className="w-12 text-right font-bold text-lock">{p.weekly}</span>
               <span className="w-6 text-center text-xs font-bold text-gray-400">{gradeFor(p.weekly)}</span>
             </div>
@@ -237,10 +227,10 @@ export default function Social() {
       {/* Nudges */}
       {friends.filter((f) => !events.some((e) => e.user_id === f.id && e.date === today)).map((f) => (
         <div key={f.id} className="mb-2 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2">
-          <span className="text-sm">👀 <b>{f.display_name}</b> hasn't logged anything today</span>
+          <span className="flex items-center gap-1.5 text-sm"><Icon name="eye" className="h-4 w-4 text-amber-600" /> <b>{f.display_name}</b> hasn't logged anything today</span>
           <button className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
             disabled={nudgedToday.has(f.id)} onClick={() => setNudgeFor(f)}>
-            {nudgedToday.has(f.id) ? "Nudged ✓" : "Lock in 👀"}
+            {nudgedToday.has(f.id) ? "Nudged" : "Lock in"}
           </button>
         </div>
       ))}
@@ -284,7 +274,7 @@ export default function Social() {
                     <button aria-label="Add or edit photos"
                       className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 active:scale-95"
                       onClick={() => setEditorDate(date)}>
-                      📸 {evs.some((e) => e.type === "photos") ? "edit" : "add"}
+                      <span className="flex items-center gap-1"><Icon name="camera" className="h-3.5 w-3.5" />{evs.some((e) => e.type === "photos") ? "edit" : "add"}</span>
                     </button>
                   )}
                 </span>
@@ -301,9 +291,10 @@ export default function Social() {
                   const count = myRx.filter((r) => r.emoji === em).length;
                   const mine = myEmoji === em;
                   return (
-                    <button key={em} onClick={() => react(evs, em)}
-                      className={`rounded-full px-2.5 py-1 text-sm transition active:scale-90 ${mine ? "bg-lock-faint ring-2 ring-lock-light" : "bg-gray-50"}`}>
-                      {em}{count > 0 && <span className={`ml-1 text-[10px] font-bold ${mine ? "text-lock" : "text-gray-500"}`}>{count}</span>}
+                    <button key={em} aria-label={`React ${REACTION_ICONS[em]}`} onClick={() => react(evs, em)}
+                      className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 transition active:scale-90 ${mine ? "bg-lock-faint text-lock ring-2 ring-lock-light" : "bg-gray-50 text-gray-500"}`}>
+                      <Icon name={REACTION_ICONS[em]} className="h-4 w-4" />
+                      {count > 0 && <span className="text-[10px] font-bold">{count}</span>}
                     </button>
                   );
                 })}
@@ -409,11 +400,11 @@ function EventLine({ e, p, photoUrls, audioUrls = {} }) {
   if (e.type === "habits" && !s.done) return null;
   if (e.type === "tasks" && !s.done) return null;
   if (e.type === "food")
-    return <p>🍽 Logged {s.meals} meal{s.meals !== 1 && "s"} — {s.proteinHit ? "hit protein ✓" : `${s.protein}/${s.proteinTarget}g protein`}, {s.kcal}/{s.kcalTarget} kcal</p>;
+    return <p className="flex items-center gap-1.5"><Icon name="bowl" className="h-4 w-4 text-gray-400" />Logged {s.meals} meal{s.meals !== 1 && "s"} — {s.proteinHit ? "hit protein" : `${s.protein}/${s.proteinTarget}g protein`}, {s.kcal}/{s.kcalTarget} kcal</p>;
   if (e.type === "lift")
     return (
       <div>
-        <p>🏋️ Trained <b>{s.type}</b>{s.sets > 0 && ` — ${s.sets} sets`}</p>
+        <p className="flex items-center gap-1.5"><Icon name="barbell" className="h-4 w-4 text-gray-400" />Trained <b>{s.type}</b>{s.sets > 0 && ` — ${s.sets} sets`}</p>
         {s.note && <p className="mt-0.5 rounded-lg bg-gray-50 px-2 py-1 text-[12px] italic text-gray-600">"{s.note}"</p>}
       </div>
     );
@@ -423,9 +414,9 @@ function EventLine({ e, p, photoUrls, audioUrls = {} }) {
       .map((it) => ({ url: photoUrls[it.path], caption: it.caption, at: it.at }));
     return <PhotoStrip shots={shots} />;
   }
-  if (e.type === "habits") return <p>✅ Completed {s.done}/{s.total} habits</p>;
-  if (e.type === "tasks") return <p>📋 Cleared {s.done}/{s.total} tasks</p>;
-  if (e.type === "journal_done") return <p>📓 Journaled ✓</p>;
+  if (e.type === "habits") return <p className="flex items-center gap-1.5"><Icon name="check" className="h-4 w-4 text-gray-400" />Completed {s.done}/{s.total} habits</p>;
+  if (e.type === "tasks") return <p className="flex items-center gap-1.5"><Icon name="clipboard" className="h-4 w-4 text-gray-400" />Cleared {s.done}/{s.total} tasks</p>;
+  if (e.type === "journal_done") return <p className="flex items-center gap-1.5"><Icon name="notebook" className="h-4 w-4 text-gray-400" />Journaled</p>;
   if (e.type === "checkin") {
     const delta = s.weight && p.start_weight && p.goal_weight
       ? `${Math.abs(p.start_weight - s.weight).toFixed(1)} lb ${p.start_weight > p.goal_weight ? "down" : "up"} toward ${p.goal_weight}`
@@ -435,7 +426,7 @@ function EventLine({ e, p, photoUrls, audioUrls = {} }) {
       .map((x) => ({ url: photoUrls[x] }));
     return (
       <div>
-        {s.weight && <p>🎯 Checked in: <b>{s.weight} lb</b>{delta && ` — ${delta}`}</p>}
+        {s.weight && <p className="flex items-center gap-1.5"><Icon name="target" className="h-4 w-4 text-gray-400" />Checked in: <b>{s.weight} lb</b>{delta && ` — ${delta}`}</p>}
         {s.caption && <p className="text-[12px] italic text-gray-600">"{s.caption}"</p>}
         <PhotoStrip shots={shots} />
       </div>
@@ -452,7 +443,7 @@ function CommentBox({ onSend }) {
     if (!text.trim()) return;
     onSend(text.trim());
     setText("");
-    showToast("Comment posted ✓");
+    showToast("Comment posted");
   }
   return (
     <form onSubmit={submit}
@@ -488,7 +479,7 @@ function FriendsSheet({ open, onClose, me, friends, pendingIn, onChanged, myUser
     const [a, b] = [me, other].sort();
     const { error } = await supabase.from("friendships")
       .insert({ user_a: a, user_b: b, requested_by: me });
-    setMsg(error ? (error.message.includes("duplicate") ? "Already requested/friends." : error.message) : "Request sent ✓");
+    setMsg(error ? (error.message.includes("duplicate") ? "Already requested/friends." : error.message) : "Request sent");
     onChanged();
   }
 
@@ -569,7 +560,7 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
         { user_id: user.id, date, type: "checkin",
           summary: { weight: w, caption, photo_path: paths[0] || null, photo_paths: paths } },
         { onConflict: "user_id,date,type" });
-      showToast("Check-in posted ✓");
+      showToast("Check-in posted");
       onPosted();
       onClose();
     } catch (e) { setError(e.message); }
@@ -578,7 +569,7 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
 
   return (
     <Sheet open={open} onClose={onClose}
-      title={<span className="flex items-center gap-2"><BarbellIcon className="h-6 w-6" /> Weekly check-in</span>}>
+      title={<span className="flex items-center gap-2"><Icon name="barbell" className="h-6 w-6" /> Weekly check-in</span>}>
       <div className="space-y-3">
         <label className="btn-ghost block w-full cursor-pointer text-center">
           {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} selected — tap to change` : "+ Add photos"}
@@ -633,7 +624,7 @@ function CompareSheet({ open, onClose, uid, onNew }) {
 
   return (
     <Sheet open={open} onClose={onClose}
-      title={<span className="flex items-center gap-2"><BarbellIcon className="h-6 w-6" /> Progress check-ins</span>}>
+      title={<span className="flex items-center gap-2"><Icon name="barbell" className="h-6 w-6" /> Progress check-ins</span>}>
       <button className="btn-primary mb-3 w-full" onClick={onNew}>+ New check-in</button>
       {delta !== null && (
         <p className="mb-3 rounded-xl bg-lock-faint px-3 py-2 text-center text-sm font-semibold text-lock">
@@ -720,7 +711,7 @@ function RecorderControls({ rec }) {
   return (
     <>
       {!rec.recording && !rec.blob && (
-        <button className="btn-ghost w-full" onClick={rec.start}>🎙 Record voice memo</button>
+        <button className="btn-ghost flex w-full items-center justify-center gap-2" onClick={rec.start}><Icon name="mic" className="h-[18px] w-[18px]" /> Record voice memo</button>
       )}
       {rec.recording && (
         <button className="w-full animate-pulse rounded-2xl bg-red-500 py-3 font-bold text-white active:scale-95"
@@ -790,7 +781,7 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
         await supabase.from("feed_events").delete()
           .eq("user_id", user.id).eq("date", date).eq("type", "post");
       }
-      showToast(existing ? "Post updated ✓" : "Posted ✓");
+      showToast(existing ? "Post updated" : "Posted");
       onSaved(); onClose();
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -806,8 +797,8 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
               <div key={i} className="flex items-start justify-between gap-2 rounded-xl bg-gray-50 p-2.5">
                 <div className="min-w-0 flex-1 text-[12px] text-gray-600">
                   {it.text && <p className="line-clamp-2">{it.text}</p>}
-                  {it.audio_path && <p className="text-gray-400">🎙 voice memo</p>}
-                  {!!it.photo_paths?.length && <p className="text-gray-400">📸 {it.photo_paths.length} photo(s)</p>}
+                  {it.audio_path && <p className="flex items-center gap-1 text-gray-400"><Icon name="mic" className="h-3.5 w-3.5" /> voice memo</p>}
+                  {!!it.photo_paths?.length && <p className="flex items-center gap-1 text-gray-400"><Icon name="image" className="h-3.5 w-3.5" /> {it.photo_paths.length} photo(s)</p>}
                 </div>
                 <button className="shrink-0 text-xs font-semibold text-red-400"
                   onClick={() => setItems((p) => p.filter((_, xi) => xi !== i))}>
@@ -822,7 +813,7 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
           value={text} onChange={(e) => setText(e.target.value)} />
 
         <label className="btn-ghost block w-full cursor-pointer text-center">
-          {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} attached — tap to change` : "📸 Add photos"}
+          {files.length ? `${files.length} photo${files.length !== 1 ? "s" : ""} attached — tap to change` : "Add photos"}
           <input type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => setFiles(Array.from(e.target.files || []))} />
         </label>
@@ -865,7 +856,7 @@ function NudgeSheet({ open, onClose, me, friend, onSent }) {
       const { error: insErr } = await supabase.from("nudges")
         .insert({ from_user: me, to_user: friend.id, date, audio_path, message: message.trim() || null });
       if (insErr) throw insErr;
-      showToast("Nudge sent 👀");
+      showToast("Nudge sent");
       onSent(friend.id);
       onClose();
     } catch (e) { setError(e.message); }
@@ -873,7 +864,7 @@ function NudgeSheet({ open, onClose, me, friend, onSent }) {
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title={`👀 Nudge ${friend.display_name}`}>
+    <Sheet open={open} onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="eye" className="h-5 w-5" /> Nudge {friend.display_name}</span>}>
       <div className="space-y-3">
         <p className="text-[12px] text-gray-400">
           They haven't logged anything today. Say it to their face — 15 seconds max.
@@ -886,7 +877,7 @@ function NudgeSheet({ open, onClose, me, friend, onSent }) {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button className="btn-primary w-full" disabled={busy || rec.recording} onClick={send}>
-          {busy ? "Sending…" : rec.blob || message.trim() ? "Send nudge 👀" : "Send plain nudge 👀"}
+          {busy ? "Sending…" : rec.blob || message.trim() ? "Send nudge" : "Send plain nudge"}
         </button>
       </div>
     </Sheet>
@@ -938,14 +929,14 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
         await supabase.from("feed_events").delete()
           .eq("user_id", user.id).eq("date", date).eq("type", "photos");
       }
-      showToast("Post updated ✓");
+      showToast("Post updated");
       onSaved(); onClose();
     } catch (e) { setError(e.message); }
     setBusy(false);
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="📸 Photo updates">
+    <Sheet open={open} onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="camera" className="h-5 w-5" /> Photo updates</span>}>
       <p className="mb-3 text-[11px] text-gray-400">
         Add photos to today's post as the day unfolds — meals, pumps, PRs. Friends see them live in the feed.
       </p>
