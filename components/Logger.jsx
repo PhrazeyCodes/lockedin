@@ -89,8 +89,11 @@ function Describe({ onResult, setBusy, setError, busy }) {
   }
   return (
     <div className="space-y-3">
-      <textarea className="input min-h-[90px]" placeholder="e.g. chipotle bowl with double chicken, white rice, black beans, cheese"
+      <textarea className="input min-h-[90px]" placeholder='e.g. "In-N-Out Double Double" or "chipotle bowl with double chicken, white rice, black beans"'
         value={text} onChange={(e) => setText(e.target.value)} />
+      <p className="text-[11px] text-gray-400">
+        Name a restaurant item, a packaged product, or describe a home-cooked plate — you'll get an estimate you can edit before logging.
+      </p>
       <button className="btn-primary w-full" disabled={!text.trim() || busy} onClick={go}>
         {busy ? "Analyzing…" : "Analyze"}
       </button>
