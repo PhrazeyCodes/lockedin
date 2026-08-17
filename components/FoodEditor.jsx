@@ -1,5 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
+import Icon from "./Icon";
+import { MEAL_SLOTS, MEAL_LABELS, MEAL_ICONS, slotOf } from "@/lib/meals";
 
 // Every logging path lands here. `initial`: {name, brand, qty, unit, per100?, kcal, p, c, f}
 // per100 present → gram-scaling; otherwise macros are per-serving and scale by qty.
@@ -9,6 +11,8 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
   const [qty, setQty] = useState(initial.qty ?? (initial.per100 ? 100 : 1));
   const [unit, setUnit] = useState(initial.unit || (initial.per100 ? "g" : "serving"));
   // Manual fields hold raw strings — "0" never gets stuck while typing.
+  // Defaults to the slot for right now (or the meal's existing one when editing).
+  const [slot, setSlot] = useState(slotOf(initial));
   const [manual, setManual] = useState(
     initial.per100 ? null : {
       kcal: initial.kcal ? String(initial.kcal) : "",
@@ -76,6 +80,19 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
           </div>
         ))}
       </div>
+      <div>
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Meal</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {MEAL_SLOTS.map((s) => (
+            <button key={s} onClick={() => setSlot(s)}
+              className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition active:scale-95 ${
+                slot === s ? "bg-lock-faint text-lock ring-2 ring-lock-light" : "bg-gray-50 text-gray-500"}`}>
+              <Icon name={MEAL_ICONS[s]} className="h-4 w-4" />
+              {MEAL_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex gap-2 pt-1">
         <button className="btn-ghost flex-1" onClick={onCancel}>Cancel</button>
         <button className="btn-primary flex-1" disabled={!name}
@@ -86,6 +103,7 @@ export default function FoodEditor({ initial, onSave, onCancel, saveLabel = "Log
             kcal: scaled.kcal, p: scaled.p, c: scaled.c, f: scaled.f,
             photo: initial.photo || null,
             ts: initial.ts || Date.now(),
+            slot,
           })}>
           {saveLabel}
         </button>

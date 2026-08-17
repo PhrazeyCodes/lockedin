@@ -12,6 +12,7 @@ import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
 import { SEEN_KEY } from "@/lib/notifications";
+import { groupMeals, slotOf, MEAL_SLOTS, MEAL_LABELS, MEAL_ICONS } from "@/lib/meals";
 import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 
@@ -24,6 +25,7 @@ export default function Home() {
   const [loggerOpen, setLoggerOpen] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null);
+  const [movingMeal, setMovingMeal] = useState(null); // meal whose slot is being changed
   const [nudgers, setNudgers] = useState(null); // names of friends who nudged you today
   const [unread, setUnread] = useState(0); // notification badge count
 
@@ -160,25 +162,42 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Meals */}
+      {/* Meals — filed by the time they were logged, movable by tapping the slot chip */}
       <div className="card mt-3">
         <h3 className="mb-2 font-bold">Meals</h3>
         {!day.meals.length && <p className="py-4 text-center text-sm text-gray-400">Nothing logged yet — hit +</p>}
-        <div className="space-y-2">
-          {day.meals.map((m) => (
-            <button key={m.id} onClick={() => setEditingMeal(m)}
-              className="flex w-full items-center gap-3 rounded-xl bg-gray-50 p-2.5 text-left active:bg-gray-100">
-              {m.photo
-                ? <img src={m.photo} alt="" className="h-11 w-11 rounded-lg object-cover" />
-                : <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-lock-faint text-lock">
-                    <Icon name="bowl" className="h-5 w-5" />
-                  </span>}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{m.name}</div>
-                <div className="text-[11px] text-gray-500">P{Math.round(m.p)} · C{Math.round(m.c)} · F{Math.round(m.f)}</div>
+        <div className="space-y-3">
+          {groupMeals(day.meals).map((g) => (
+            <div key={g.slot}>
+              <div className="mb-1 flex items-center gap-1.5">
+                <Icon name={g.icon} className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{g.label}</span>
+                <span className="ml-auto text-[11px] text-gray-400">{g.kcal} kcal · {Math.round(g.p)}g P</span>
               </div>
-              <span className="text-sm font-bold">{m.kcal}</span>
-            </button>
+              <div className="space-y-2">
+                {g.meals.map((m) => (
+                  <div key={m.id} className="flex items-center gap-3 rounded-xl bg-gray-50 p-2.5">
+                    <button className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-70"
+                      onClick={() => setEditingMeal(m)}>
+                      {m.photo
+                        ? <img src={m.photo} alt="" className="h-11 w-11 rounded-lg object-cover" />
+                        : <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-lock-faint text-lock">
+                            <Icon name="bowl" className="h-5 w-5" />
+                          </span>}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold">{m.name}</div>
+                        <div className="text-[11px] text-gray-500">P{Math.round(m.p)} · C{Math.round(m.c)} · F{Math.round(m.f)}</div>
+                      </div>
+                      <span className="text-sm font-bold">{m.kcal}</span>
+                    </button>
+                    <button aria-label="Move to another meal" onClick={() => setMovingMeal(m)}
+                      className="shrink-0 rounded-lg p-1.5 text-gray-300 active:scale-90 active:text-lock">
+                      <Icon name="route" className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -224,6 +243,37 @@ export default function Home() {
               Delete
             </button>
           </>
+        )}
+      </Sheet>
+
+      {/* Move a logged food to another meal */}
+      <Sheet open={!!movingMeal} onClose={() => setMovingMeal(null)} title="Move to…">
+        {movingMeal && (
+          <div className="space-y-2">
+            <p className="text-[12px] text-gray-500">
+              <b>{movingMeal.name}</b> is currently in {MEAL_LABELS[slotOf(movingMeal)]}.
+            </p>
+            {MEAL_SLOTS.map((s) => {
+              const current = slotOf(movingMeal) === s;
+              return (
+                <button key={s} disabled={current}
+                  onClick={() => {
+                    update((d) => {
+                      d.meals = d.meals.map((x) => (x.id === movingMeal.id ? { ...x, slot: s } : x));
+                      return d;
+                    });
+                    setMovingMeal(null);
+                    showToast(`Moved to ${MEAL_LABELS[s]}`);
+                  }}
+                  className={`flex w-full items-center gap-2.5 rounded-xl p-3 text-left text-sm font-semibold transition active:scale-[0.98] ${
+                    current ? "bg-lock-faint text-lock" : "bg-gray-50"}`}>
+                  <Icon name={MEAL_ICONS[s]} className="h-[18px] w-[18px]" />
+                  {MEAL_LABELS[s]}
+                  {current && <span className="ml-auto text-[11px] font-medium text-gray-400">current</span>}
+                </button>
+              );
+            })}
+          </div>
         )}
       </Sheet>
 
