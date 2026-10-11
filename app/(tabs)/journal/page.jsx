@@ -53,6 +53,15 @@ export default function Journal() {
 
   useEffect(() => { if (user) refresh(); }, [user]); // eslint-disable-line
 
+  // Deep links from the Home "Next up" card: /journal?open=am | pm | sleep
+  useEffect(() => {
+    if (!user) return;
+    const open = new URLSearchParams(window.location.search).get("open");
+    if (open === "am" || open === "pm") setFlow(open);
+    if (open === "sleep") setSleepOpen(true);
+    if (open) window.history.replaceState(null, "", "/journal");
+  }, [user]);
+
   if (loading) return null;
 
   async function save(patch) {
