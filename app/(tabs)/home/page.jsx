@@ -12,6 +12,8 @@ import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
 import NonNegotiables from "@/components/NonNegotiables";
+import TodayCoach from "@/components/TodayCoach";
+import { getNNList, loadJournalDay } from "@/lib/journal";
 import { SEEN_KEY } from "@/lib/notifications";
 import { groupMeals, slotOf, MEAL_SLOTS, MEAL_LABELS, MEAL_ICONS } from "@/lib/meals";
 import { supabase } from "@/lib/supabase";
@@ -29,11 +31,18 @@ export default function Home() {
   const [movingMeal, setMovingMeal] = useState(null); // meal whose slot is being changed
   const [nudgers, setNudgers] = useState(null); // names of friends who nudged you today
   const [unread, setUnread] = useState(0); // notification badge count
+  const [journal, setJournal] = useState(null); // today's journal row, for the Today card
+  const [logSlot, setLogSlot] = useState(null); // meal slot chosen from the Today card
 
   useEffect(() => {
     if (!user) return;
     loadDay(user.id, date).then(setDay);
   }, [user, date]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadJournalDay(user.id, todayStr()).then(setJournal);
+  }, [user]);
 
   // "You got nudged!" popup — shows once per day when friends have nudged you
   useEffect(() => {
@@ -144,6 +153,11 @@ export default function Home() {
         </div>
       </div>
 
+      {date === todayStr() && (
+        <TodayCoach name={profile?.display_name} journal={journal} day={day} nnList={getNNList()}
+          onLogMeal={(slot) => { setLogSlot(slot); setLoggerOpen(true); }} />
+      )}
+
       <Rings totals={totals} targets={targets} />
 
       {/* Water */}
@@ -205,7 +219,10 @@ export default function Home() {
 
       {/* Non-negotiables — same checklist as the Journal tab */}
       <div className="mt-3">
-        <NonNegotiables key={date} uid={user?.id} date={date} />
+        <div id="nn">
+          <NonNegotiables key={date} uid={user?.id} date={date}
+            onChange={(nn) => date === todayStr() && setJournal((j) => ({ ...(j || {}), nn }))} />
+        </div>
       </div>
 
       {/* Habits */}
@@ -221,8 +238,13 @@ export default function Home() {
         +
       </button>
 
-      <Logger open={loggerOpen} onClose={() => setLoggerOpen(false)}
-        onLog={(food) => { pushRecent(food); update((d) => { d.meals.push(food); return d; }); showToast("Logged"); }} />
+      <Logger open={loggerOpen} onClose={() => { setLoggerOpen(false); setLogSlot(null); }}
+        onLog={(food) => {
+          pushRecent(food);
+          const f = logSlot ? { ...food, slot: logSlot } : food;
+          update((d) => { d.meals.push(f); return d; });
+          showToast("Logged");
+        }} />
 
       {/* Nudge popup */}
       {nudgers && (
