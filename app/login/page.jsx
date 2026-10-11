@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Icon from "@/components/Icon";
@@ -11,6 +11,15 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  // Already signed in? Skip this screen. (The home-screen icon can open straight onto /login.)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/home");
+      else setChecking(false);
+    });
+  }, [router]);
 
   async function submit(e) {
     e.preventDefault();
@@ -24,13 +33,21 @@ export default function Login() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push("/home");
+        router.replace("/home");
       }
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Icon name="lock" className="h-10 w-10 animate-pulse text-lock" />
+      </div>
+    );
   }
 
   return (
