@@ -9,7 +9,7 @@ import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon, { MOOD_VALUES, MOOD_ICONS } from "@/components/Icon";
 import { showToast } from "@/components/Toast";
 import NonNegotiables from "@/components/NonNegotiables";
-import { activeNN, getNNList, nnDone, perfectStreak, patchJournal, buildRecords, analyze, taskStats } from "@/lib/journal";
+import { activeNN, fetchNNList, nnDone, perfectStreak, patchJournal, buildRecords, analyze, taskStats } from "@/lib/journal";
 
 // Stored values stay the original emoji so existing entries keep working;
 // only the rendering is an icon now.
@@ -62,6 +62,9 @@ export default function Journal() {
     if (open) window.history.replaceState(null, "", "/journal");
   }, [user]);
 
+  const [nnList, setNnList] = useState([]);
+  useEffect(() => { if (user) fetchNNList(user.id).then(activeNN).then(setNnList); }, [user]);
+
   if (loading) return null;
 
   async function save(patch) {
@@ -81,7 +84,6 @@ export default function Journal() {
   }
 
   const weights = history.filter((h) => h.weight).slice(0, 30).reverse();
-  const nnList = activeNN(getNNList());
   const insights = analyze(buildRecords(history, dayRows, nnList), nnList);
   const perfect = perfectStreak(history, nnList);
   const todayTaskList = dayRows.find((d) => d.date === date)?.tasks || [];
@@ -114,7 +116,7 @@ export default function Journal() {
       </p>
 
       <div className="mb-3">
-        <NonNegotiables uid={user?.id} date={date} onChange={refresh} />
+        <NonNegotiables uid={user?.id} date={date} onChange={refresh} onListChange={setNnList} />
         {perfect > 0 && (
           <p className="mt-1.5 px-1 text-[11px] font-semibold text-lock">
             <Icon name="flame" className="mr-1 inline h-3.5 w-3.5" />{perfect} perfect day{perfect > 1 ? "s" : ""} in a row
@@ -131,9 +133,9 @@ export default function Journal() {
           <div className="font-bold">Sleep</div>
           <div className="text-[11px] text-gray-500">
             {entry?.sleep
-              ? [entry.sleep.hours && `${entry.sleep.hours}h`, entry.sleep.score && `score ${entry.sleep.score}`,
-                 entry.sleep.readiness && `readiness ${entry.sleep.readiness}`].filter(Boolean).join(" · ")
-              : "Log last night from your Oura app"}
+              ? [entry.sleep.hours && `${entry.sleep.hours}h`, entry.sleep.quality && QUALITY[entry.sleep.quality - 1],
+                 entry.sleep.score && `score ${entry.sleep.score}`].filter(Boolean).join(" · ")
+              : "How long and how well did you sleep?"}
           </div>
         </div>
         <span className="text-sm font-medium text-lock-light">{entry?.sleep ? "Edit" : "Log"}</span>
@@ -243,7 +245,7 @@ function EntryViewer({ entry, nnList = [], tasks = [], onClose, onEdit }) {
         {!entry.am?.mood && !pm.mood && entry.mood && <Mood value={entry.mood} className="h-6 w-6" />}
         {entry.weight && <span className="flex items-center gap-1.5"><Icon name="scale" className="h-4 w-4" /> {entry.weight} lb</span>}
         {entry.sleep?.hours && <span className="flex items-center gap-1.5"><Icon name="bed" className="h-4 w-4" /> {entry.sleep.hours}h
-          {entry.sleep.score && ` · ${entry.sleep.score}`}{entry.sleep.readiness && ` · R${entry.sleep.readiness}`}</span>}
+          {entry.sleep.quality && ` · ${QUALITY[entry.sleep.quality - 1]}`}{entry.sleep.score && ` · score ${entry.sleep.score}`}</span>}
         {pm.energy && <span className="flex items-center gap-1.5"><Icon name="zap" className="h-4 w-4" /> {pm.energy}/5</span>}
         {pm.deep_work && <span className="flex items-center gap-1.5"><Icon name="clock" className="h-4 w-4" /> {pm.deep_work}h deep</span>}
       </div>
@@ -308,29 +310,83 @@ function shiftDay(dateStr, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+const QUALITY = ["Awful", "Poor", "Okay", "Good", "Great"];
+
+// Hours between two "HH:MM" times, crossing midnight
+function hoursBetween(bed, wake) {
+  if (!bed || !wake) return null;
+  const [bh, bm] = bed.split(":").map(Number), [wh, wm] = wake.split(":").map(Number);
+  let mins = wh * 60 + wm - (bh * 60 + bm);
+  if (mins <= 0) mins += 24 * 60;
+  return Math.round((mins / 60) * 4) / 4; // nearest 15 min
+}
+
 function SleepSheet({ open, sleep, onClose, onSave }) {
   const [s, setS] = useState({});
-  useEffect(() => { if (open) setS(sleep || {}); }, [open, sleep]);
+  const [tracker, setTracker] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setS(sleep || {});
+    setTracker(!!(sleep?.score || sleep?.readiness));
+  }, [open, sleep]);
   if (!open) return null;
-  const num = (k, v) => setS({ ...s, [k]: v.replace(/[^0-9.]/g, "") });
-  const fields = [["hours", "Hours slept", "7.5"], ["score", "Sleep score", "82"], ["readiness", "Readiness", "78"]];
+  const set = (patch) => setS({ ...s, ...patch });
+  const num = (v) => v.replace(/[^0-9.]/g, "");
+  // Bed/wake times fill in the hours automatically (still editable)
+  const setTime = (k, v) => {
+    const next = { ...s, [k]: v };
+    const h = hoursBetween(next.bed, next.wake);
+    setS(h ? { ...next, hours: String(h) } : next);
+  };
+
   return (
     <Sheet open onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="bed" className="h-5 w-5" /> Last night's sleep</span>}>
-      <p className="mb-3 text-[12px] text-gray-500">Open your Oura app and copy today's numbers. Hours matter most — the rest is optional.</p>
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        {fields.map(([k, label, ph]) => (
-          <div key={k}>
-            <label className="mb-1 block text-[11px] font-medium text-gray-500">{label}</label>
-            <input className="input px-2 text-center" type="text" inputMode="decimal" placeholder={ph}
-              value={s[k] ?? ""} onChange={(e) => num(k, e.target.value)} />
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          {[["bed", "Went to bed"], ["wake", "Woke up"]].map(([k, label]) => (
+            <div key={k}>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">{label}</label>
+              <input className="input px-2 text-center" type="time" value={s[k] || ""} onChange={(e) => setTime(k, e.target.value)} />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <label className="text-sm font-medium text-gray-600">Hours slept</label>
+          <input className="input !w-24 text-center" type="text" inputMode="decimal" placeholder="7.5"
+            value={s.hours ?? ""} onChange={(e) => set({ hours: num(e.target.value) })} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-600">How well did you sleep?</label>
+          <div className="flex gap-1">
+            {QUALITY.map((q, i) => (
+              <button key={q} onClick={() => set({ quality: i + 1 })}
+                className={`flex-1 rounded-lg py-2 text-[12px] font-semibold transition active:scale-95 ${
+                  +s.quality === i + 1 ? "bg-lock text-white" : "bg-gray-100 text-gray-500"}`}>{q}</button>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
-        <button className="btn-primary flex-1" onClick={() => onSave({
-          hours: s.hours ? +s.hours : null, score: s.score ? +s.score : null, readiness: s.readiness ? +s.readiness : null,
-        })}>Save</button>
+        </div>
+        <button className="text-sm font-medium text-lock-light" onClick={() => setTracker(!tracker)}>
+          {tracker ? "− Hide sleep tracker scores" : "+ Add scores from a sleep tracker (Oura, Whoop, Apple Watch…)"}
+        </button>
+        {tracker && (
+          <div className="grid grid-cols-2 gap-2">
+            {[["score", "Sleep score", "82"], ["readiness", "Readiness / recovery", "78"]].map(([k, label, ph]) => (
+              <div key={k}>
+                <label className="mb-1 block text-[11px] font-medium text-gray-500">{label}</label>
+                <input className="input px-2 text-center" type="text" inputMode="decimal" placeholder={ph}
+                  value={s[k] ?? ""} onChange={(e) => set({ [k]: num(e.target.value) })} />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
+          <button className="btn-primary flex-1" onClick={() => onSave({
+            hours: s.hours ? +s.hours : null, quality: s.quality || null,
+            bed: s.bed || null, wake: s.wake || null,
+            score: s.score ? +s.score : null, readiness: s.readiness ? +s.readiness : null,
+          })}>Save</button>
+        </div>
       </div>
     </Sheet>
   );
