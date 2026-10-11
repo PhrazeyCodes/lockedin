@@ -11,6 +11,7 @@ import Sheet from "@/components/Sheet";
 import HabitsCard, { getHabitList } from "@/components/HabitsCard";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
+import NonNegotiables from "@/components/NonNegotiables";
 import { SEEN_KEY } from "@/lib/notifications";
 import { groupMeals, slotOf, MEAL_SLOTS, MEAL_LABELS, MEAL_ICONS } from "@/lib/meals";
 import { supabase } from "@/lib/supabase";
@@ -200,6 +201,11 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Non-negotiables — same checklist as the Journal tab */}
+      <div className="mt-3">
+        <NonNegotiables key={date} uid={user?.id} date={date} />
       </div>
 
       {/* Habits */}
