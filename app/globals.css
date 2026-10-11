@@ -44,3 +44,13 @@ body {
   to { transform: translateY(0); }
 }
 .animate-slideup { animation: slideup 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
+
+/* iOS gives time inputs a fixed intrinsic width that overflows grid cells */
+.time-input {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  display: block;
+  height: 50px;
+}
+.time-input::-webkit-date-and-time-value { text-align: center; }
