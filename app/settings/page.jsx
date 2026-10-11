@@ -5,6 +5,7 @@ import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
 import { getUserApiKey, setUserApiKey } from "@/lib/nutrition";
 import { showToast } from "@/components/Toast";
+import { tradingEnabled, setTradingEnabled } from "@/lib/journal";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -39,6 +40,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [keySaved, setKeySaved] = useState(false);
+  const [trading, setTrading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export default function Settings() {
     setGoalWeight(profile.goal_weight || "");
     setCheckinDay(profile.checkin_day ?? 0);
     setApiKey(getUserApiKey());
+    setTrading(tradingEnabled());
   }, [profile]);
 
   if (loading || !targets) return null;
@@ -115,6 +118,19 @@ export default function Settings() {
               Clear
             </button>
           )}
+        </div>
+      </div>
+      <div className="card">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold">Trading journal</h3>
+            <p className="text-[12px] text-gray-500">Adds a trading review to your Night entry and a "follow my trade rules" non-negotiable. Private to you.</p>
+          </div>
+          <button role="switch" aria-checked={trading} aria-label="Trading journal"
+            onClick={() => { setTradingEnabled(!trading); setTrading(!trading); }}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition ${trading ? "bg-lock-light" : "bg-gray-300"}`}>
+            <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${trading ? "left-[22px]" : "left-0.5"}`} />
+          </button>
         </div>
       </div>
       <button className="btn-primary w-full" onClick={save}>{saved ? "Saved" : "Save"}</button>
