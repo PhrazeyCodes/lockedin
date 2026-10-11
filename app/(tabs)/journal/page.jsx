@@ -2,14 +2,14 @@
 import { useEffect, useState } from "react";
 import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
-import { markJournalDone } from "@/lib/store";
+import { markJournalDone, loadDay, saveDay } from "@/lib/store";
 import { todayStr } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon, { MOOD_VALUES, MOOD_ICONS } from "@/components/Icon";
 import { showToast } from "@/components/Toast";
 import NonNegotiables from "@/components/NonNegotiables";
-import { activeNN, getNNList, nnDone, perfectStreak, patchJournal, tradingEnabled, buildRecords, analyze, taskStats } from "@/lib/journal";
+import { activeNN, getNNList, nnDone, perfectStreak, patchJournal, buildRecords, analyze, taskStats } from "@/lib/journal";
 
 // Stored values stay the original emoji so existing entries keep working;
 // only the rendering is an icon now.
@@ -73,10 +73,18 @@ export default function Journal() {
 
   const weights = history.filter((h) => h.weight).slice(0, 30).reverse();
   const nnList = activeNN(getNNList());
-  const trading = tradingEnabled();
-  const insights = analyze(buildRecords(history, dayRows, nnList), nnList, { trading });
+  const insights = analyze(buildRecords(history, dayRows, nnList), nnList);
   const perfect = perfectStreak(history, nnList);
-  const todayTasks = taskStats(dayRows.find((d) => d.date === date));
+  const todayTaskList = dayRows.find((d) => d.date === date)?.tasks || [];
+  const todayTasks = taskStats({ tasks: todayTaskList });
+
+  // Notes live on the task itself (days.tasks[].note — owner-only, never in the feed)
+  async function saveTaskNote(taskId, note) {
+    const day = await loadDay(user.id, date);
+    day.tasks = (day.tasks || []).map((t) => (t.id === taskId ? { ...t, note } : t));
+    await saveDay(user.id, date, day);
+    setDayRows((rows) => rows.map((r) => (r.date === date ? { ...r, tasks: day.tasks } : r)));
+  }
   const shown = history.filter((h) => h.am || h.pm || h.sleep || h.weight || h.mood);
 
   return (
@@ -137,6 +145,8 @@ export default function Journal() {
         </button>
       </div>
 
+      <TodoCard tasks={todayTaskList} onSaveNote={saveTaskNote} />
+
       {weights.length > 1 && (
         <div className="card mb-3">
           <h3 className="mb-1 font-bold">Weight</h3>
@@ -180,10 +190,11 @@ export default function Journal() {
         ))}
       </div>
 
-      <Flow flow={flow} entry={entry} tasks={todayTasks} trading={trading}
+      <Flow flow={flow} entry={entry} tasks={todayTasks}
         onClose={() => setFlow(null)} onSave={save} />
       <SleepSheet open={sleepOpen} sleep={entry?.sleep} onClose={() => setSleepOpen(false)} onSave={saveSleep} />
-      <EntryViewer entry={viewing} nnList={nnList} onClose={() => setViewing(null)}
+      <EntryViewer entry={viewing} nnList={nnList}
+        tasks={viewing ? dayRows.find((d) => d.date === viewing.date)?.tasks || [] : []} onClose={() => setViewing(null)}
         onEdit={viewing?.date === date ? (which) => { setViewing(null); setFlow(which); } : null} />
       <HistoryCalendar open={calOpen} onClose={() => setCalOpen(false)} uid={user?.id} source="journal"
         onPick={(d) => {
@@ -210,12 +221,11 @@ function Field({ label, children }) {
   );
 }
 
-function EntryViewer({ entry, nnList = [], onClose, onEdit }) {
+function EntryViewer({ entry, nnList = [], tasks = [], onClose, onEdit }) {
   if (!entry) return null;
   const AM = [["intentions", "Intentions"], ["gratitude", "Gratitude"], ["focus", "Focus"]];
   const PM = [["tasks_note", "How the to-do went"], ["wins", "Wins"], ["improve", "To improve"], ["thoughts", "Thoughts"]];
   const pm = entry.pm || {};
-  const trade = pm.trade;
   return (
     <Sheet open onClose={onClose}
       title={new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}>
@@ -237,6 +247,25 @@ function EntryViewer({ entry, nnList = [], onClose, onEdit }) {
           ))}
         </div>
       )}
+      {tasks.length > 0 && (
+        <div className="mb-3">
+          <h3 className="mb-1 flex items-center gap-1.5 font-bold">
+            <Icon name="clipboard" className="h-[18px] w-[18px]" /> To-do
+            <span className="text-sm font-normal text-gray-400">{tasks.filter((t) => t.done).length}/{tasks.length}</span>
+          </h3>
+          <div className="space-y-1.5">
+            {tasks.map((t) => (
+              <div key={t.id} className="rounded-xl bg-gray-50 p-2.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <TaskCheck done={t.done} />
+                  <span className={t.done ? "text-gray-400 line-through" : "font-medium"}>{t.title}</span>
+                </div>
+                {t.note && <p className="mt-1 whitespace-pre-wrap pl-7 text-[13px] text-gray-600">{t.note}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {entry.am && (
         <div className="mb-3">
           <div className="mb-1 flex items-center justify-between">
@@ -256,16 +285,7 @@ function EntryViewer({ entry, nnList = [], onClose, onEdit }) {
             </h3>
             {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("pm")}>Edit</button>}
           </div>
-          {pm.tasks_total > 0 && <Field label="To-do">Cleared {pm.tasks_done}/{pm.tasks_total}</Field>}
           {PM.map(([k, label]) => pm[k] && <Field key={k} label={label}>{pm[k]}</Field>)}
-          {trade?.traded && (
-            <Field label="Trading">
-              {trade.followed ? "Followed my rules" : "Broke my rules"}
-              {trade.r !== "" && trade.r != null && ` · ${+trade.r > 0 ? "+" : ""}${trade.r}R`}
-              {trade.note && `\n${trade.note}`}
-            </Field>
-          )}
-          {trade && !trade.traded && <Field label="Trading">No trades today</Field>}
         </div>
       )}
       {!entry.am && !entry.pm && <p className="py-4 text-center text-sm text-gray-400">No morning or night entry that day.</p>}
@@ -322,7 +342,7 @@ function Scale({ n, value, onPick, label }) {
   );
 }
 
-function Flow({ flow, entry, tasks, trading, onClose, onSave }) {
+function Flow({ flow, entry, tasks, onClose, onSave }) {
   const [data, setData] = useState({});
   const [mood, setMood] = useState("");
   const [weight, setWeight] = useState("");
@@ -338,8 +358,6 @@ function Flow({ flow, entry, tasks, trading, onClose, onSave }) {
   if (!flow) return null;
   const am = flow === "am";
   const set = (k, v) => setData({ ...data, [k]: v });
-  const trade = data.trade || {};
-  const setTrade = (patch) => set("trade", { ...trade, ...patch });
   const fields = am
     ? [["intentions", "Today's intentions (1–3)"], ["gratitude", "Grateful for (1–3)"], ["focus", "One-line focus for the day"]]
     : [["wins", "Wins today"], ["improve", "What to improve"], ["thoughts", "Free thoughts"]];
@@ -360,52 +378,17 @@ function Flow({ flow, entry, tasks, trading, onClose, onSave }) {
           <>
             <Scale n={10} label="Rate today" value={data.rating} onPick={(v) => set("rating", v)} />
             <Scale n={5} label="Energy" value={data.energy} onPick={(v) => set("energy", v)} />
-            <div className="rounded-xl bg-gray-50 p-3">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600">To-do list</span>
-                <span className={`text-sm font-bold ${tasks.total && tasks.done === tasks.total ? "text-lock-light" : "text-gray-700"}`}>
-                  {tasks.total ? `${tasks.done}/${tasks.total} cleared` : "No tasks in Plan today"}
-                </span>
-              </div>
-              <textarea className="input min-h-[60px] bg-white" placeholder="How did your tasks go? What got in the way?"
-                value={data.tasks_note || ""} onChange={(e) => set("tasks_note", e.target.value)} />
+            <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2.5">
+              <span className="text-sm font-medium text-gray-600">To-do list</span>
+              <span className={`text-sm font-bold ${tasks.total && tasks.done === tasks.total ? "text-lock-light" : "text-gray-700"}`}>
+                {tasks.total ? `${tasks.done}/${tasks.total} cleared` : "No tasks in Plan today"}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <label className="text-sm font-medium text-gray-600">Deep work (hours)</label>
               <input className="input !w-24 text-center" type="text" inputMode="decimal" placeholder="0"
                 value={data.deep_work ?? ""} onChange={(e) => set("deep_work", e.target.value.replace(/[^0-9.]/g, ""))} />
             </div>
-            {trading && (
-              <div className="rounded-xl bg-gray-50 p-3">
-                <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-600">
-                  <Icon name="trendingUp" className="h-4 w-4" /> Trading
-                </div>
-                <div className="mb-2 flex gap-1">
-                  {[[true, "Traded"], [false, "No trades"]].map(([v, l]) => (
-                    <button key={l} onClick={() => setTrade({ traded: v })}
-                      className={`flex-1 rounded-lg py-2 text-sm font-semibold ${trade.traded === v ? "bg-lock text-white" : "bg-white text-gray-500"}`}>{l}</button>
-                  ))}
-                </div>
-                {trade.traded && (
-                  <>
-                    <div className="mb-2 flex gap-1">
-                      {[[true, "Followed rules"], [false, "Broke rules"]].map(([v, l]) => (
-                        <button key={l} onClick={() => setTrade({ followed: v })}
-                          className={`flex-1 rounded-lg py-2 text-sm font-semibold ${trade.followed === v
-                            ? (v ? "bg-lock text-white" : "bg-red-500 text-white") : "bg-white text-gray-500"}`}>{l}</button>
-                      ))}
-                    </div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label className="text-sm text-gray-600">Result (R)</label>
-                      <input className="input !w-24 bg-white text-center" type="text" inputMode="decimal" placeholder="+1.5"
-                        value={trade.r ?? ""} onChange={(e) => setTrade({ r: e.target.value.replace(/[^0-9.\-]/g, "") })} />
-                    </div>
-                    <textarea className="input min-h-[50px] bg-white" placeholder="What happened? Which rule, if any, did you break?"
-                      value={trade.note || ""} onChange={(e) => setTrade({ note: e.target.value })} />
-                  </>
-                )}
-              </div>
-            )}
           </>
         )}
         {fields.map(([k, label]) => (
@@ -435,6 +418,68 @@ function Flow({ flow, entry, tasks, trading, onClose, onSave }) {
         </div>
       </div>
     </Sheet>
+  );
+}
+
+function TaskCheck({ done }) {
+  return (
+    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${done ? "border-lock-light bg-lock-light text-white" : "border-gray-300"}`}>
+      {done && <Icon name="check" className="h-3 w-3" strokeWidth={3} />}
+    </span>
+  );
+}
+
+// Today's to-dos from the Plan tab: what got checked off, plus a note per task.
+function TodoCard({ tasks, onSaveNote }) {
+  const [open, setOpen] = useState(null); // task id whose note is being edited
+  const [draft, setDraft] = useState("");
+  const done = tasks.filter((t) => t.done).length;
+
+  function start(t) { setOpen(t.id); setDraft(t.note || ""); }
+  async function commit(t) {
+    setOpen(null);
+    if ((t.note || "") !== draft.trim()) { await onSaveNote(t.id, draft.trim()); showToast("Note saved"); }
+  }
+
+  return (
+    <div className="card mb-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-1.5 font-bold">
+          <Icon name="clipboard" className="h-[18px] w-[18px] text-lock" /> Today's to-do
+        </h3>
+        {tasks.length > 0 && (
+          <span className={`text-sm font-semibold ${done === tasks.length ? "text-lock-light" : "text-gray-500"}`}>{done}/{tasks.length}</span>
+        )}
+      </div>
+      {!tasks.length && <p className="py-3 text-center text-sm text-gray-400">No tasks yet — add them in the Plan tab.</p>}
+      <div className="space-y-1.5">
+        {tasks.map((t) => (
+          <div key={t.id} className={`rounded-xl p-2.5 ${t.done ? "bg-lock-faint" : "bg-gray-50"}`}>
+            <div className="flex items-center gap-2.5">
+              <TaskCheck done={t.done} />
+              <span className={`min-w-0 flex-1 truncate text-sm ${t.done ? "text-gray-500 line-through" : "font-medium"}`}>{t.title}</span>
+              {open !== t.id && (
+                <button className="shrink-0 text-[12px] font-medium text-lock-light" onClick={() => start(t)}>
+                  {t.note ? "Edit note" : "+ Note"}
+                </button>
+              )}
+            </div>
+            {open === t.id ? (
+              <div className="mt-2">
+                <textarea autoFocus className="input min-h-[60px] bg-white text-sm" placeholder="How did it go? What helped or got in the way?"
+                  value={draft} onChange={(e) => setDraft(e.target.value)} />
+                <div className="mt-1.5 flex justify-end gap-2">
+                  <button className="text-sm text-gray-400" onClick={() => setOpen(null)}>Cancel</button>
+                  <button className="text-sm font-semibold text-lock-light" onClick={() => commit(t)}>Save</button>
+                </div>
+              </div>
+            ) : t.note && (
+              <p className="mt-1 whitespace-pre-wrap pl-[30px] text-[13px] text-gray-600">{t.note}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
