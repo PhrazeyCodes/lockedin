@@ -13,7 +13,7 @@ import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
 import NonNegotiables from "@/components/NonNegotiables";
 import TodayCoach from "@/components/TodayCoach";
-import { getNNList, loadJournalDay } from "@/lib/journal";
+import { getNNList, fetchNNList, loadJournalDay } from "@/lib/journal";
 import { SEEN_KEY } from "@/lib/notifications";
 import { groupMeals, slotOf, MEAL_SLOTS, MEAL_LABELS, MEAL_ICONS } from "@/lib/meals";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +33,7 @@ export default function Home() {
   const [unread, setUnread] = useState(0); // notification badge count
   const [journal, setJournal] = useState(null); // today's journal row, for the Today card
   const [logSlot, setLogSlot] = useState(null); // meal slot chosen from the Today card
+  const [nnList, setNnList] = useState([]);
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +43,8 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
     loadJournalDay(user.id, todayStr()).then(setJournal);
+    setNnList(getNNList());
+    fetchNNList(user.id).then(setNnList);
   }, [user]);
 
   // "You got nudged!" popup — shows once per day when friends have nudged you
@@ -154,7 +157,7 @@ export default function Home() {
       </div>
 
       {date === todayStr() && (
-        <TodayCoach name={profile?.display_name} journal={journal} day={day} nnList={getNNList()}
+        <TodayCoach name={profile?.display_name} journal={journal} day={day} nnList={nnList}
           onLogMeal={(slot) => { setLogSlot(slot); setLoggerOpen(true); }} />
       )}
 
@@ -220,7 +223,7 @@ export default function Home() {
       {/* Non-negotiables — same checklist as the Journal tab */}
       <div className="mt-3">
         <div id="nn">
-          <NonNegotiables key={date} uid={user?.id} date={date}
+          <NonNegotiables key={date} uid={user?.id} date={date} onListChange={setNnList}
             onChange={(nn) => date === todayStr() && setJournal((j) => ({ ...(j || {}), nn }))} />
         </div>
       </div>
