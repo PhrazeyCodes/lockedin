@@ -43,7 +43,7 @@ export default function Plan() {
       if (date === todayStr() && !d.carryDone) {
         const prev = await loadDay(user.id, addDays(date, -1));
         const carried = (prev.tasks || []).filter((t) => !t.done)
-          .map((t) => ({ ...t, id: crypto.randomUUID(), carry: (t.carry || 0) + 1 }));
+          .map(({ note, ...t }) => ({ ...t, id: crypto.randomUUID(), carry: (t.carry || 0) + 1 }));
         if (carried.length) d = { ...d, tasks: [...carried, ...(d.tasks || [])] };
         d.carryDone = true;
       }
