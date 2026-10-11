@@ -3,18 +3,25 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import { supabase } from "@/lib/supabase";
 import { weekDates, todayStr } from "@/lib/dates";
-import { getNNList, saveNNList, activeNN, patchJournal } from "@/lib/journal";
+import { getNNList, fetchNNList, saveNNList, activeNN, patchJournal, newId } from "@/lib/journal";
+import { showToast } from "./Toast";
 
 // Daily non-negotiables. Checks live in journal.nn (owner-only), the list itself per device.
 // Kept short on purpose — the point is doing all of them every single day.
-export default function NonNegotiables({ uid, date = todayStr(), onChange }) {
-  const [all, setAll] = useState(getNNList());
+export default function NonNegotiables({ uid, date = todayStr(), onChange, onListChange }) {
+  const [all, setAll] = useState([]);
   const [checks, setChecks] = useState({});
   const [week, setWeek] = useState({}); // date -> nn
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const list = activeNN(all);
   const dates = weekDates(date);
+
+  // Cached list first (instant), then the synced copy from your account
+  useEffect(() => {
+    setAll(getNNList());
+    if (uid) fetchNNList(uid).then(setAll);
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;
@@ -30,16 +37,22 @@ export default function NonNegotiables({ uid, date = todayStr(), onChange }) {
     const next = { ...checks, [id]: !checks[id] };
     setChecks(next);
     setWeek({ ...week, [date]: next });
-    await patchJournal(uid, date, { nn: next });
+    const ok = await patchJournal(uid, date, { nn: next });
+    if (!ok) showToast("Couldn't save — check your connection");
     onChange?.(next);
   }
 
-  function persist(next) { setAll(next); saveNNList(next); }
+  async function persist(next) {
+    setAll(next);
+    onListChange?.(next);
+    const ok = await saveNNList(uid, next);
+    if (!ok) showToast("Saved on this device only — couldn't sync");
+  }
 
   function add() {
     const label = draft.trim();
     if (!label) return;
-    persist([...all, { id: crypto.randomUUID().slice(0, 8), label }]);
+    persist([...all, { id: newId(), label }]);
     setDraft("");
   }
 

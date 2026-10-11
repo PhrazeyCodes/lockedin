@@ -45,7 +45,7 @@ export function buildSteps({ h, journal, day, nnList }) {
       id: "sleep", label: "Sleep", icon: "bed", done: !!journal?.sleep,
       from: 4, to: 12,
       title: "Log last night's sleep",
-      sub: "Copy your hours and scores from the Oura app.",
+      sub: "How long and how well did you sleep? 10 seconds.",
       cta: "Log sleep", href: "/journal?open=sleep",
     },
     {
