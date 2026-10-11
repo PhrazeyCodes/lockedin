@@ -23,6 +23,13 @@ function saveTemplates(t) { localStorage.setItem(TPL_KEY, JSON.stringify(t)); }
 export default function Plan() {
   const { user, profile, loading } = useUser();
   const [seg, setSeg] = useState("schedule");
+  // Deep link from Home: /plan?tab=tasks
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "tasks") {
+      setSeg("tasks");
+      window.history.replaceState(null, "", "/plan");
+    }
+  }, []);
   const [date, setDate] = useState(todayStr());
   const [day, setDay] = useState(blankDay());
   const [editing, setEditing] = useState(null); // block being edited/created
