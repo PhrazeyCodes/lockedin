@@ -53,7 +53,7 @@ export default function NonNegotiables({ uid, date = todayStr(), onChange }) {
           <Icon name="target" className="h-[18px] w-[18px] text-lock" /> Non-negotiables
         </h3>
         <div className="flex items-center gap-3">
-          <span className={`text-sm font-semibold ${allDone ? "text-lock-light" : "text-gray-500"}`}>{done}/{list.length}</span>
+          {list.length > 0 && <span className={`text-sm font-semibold ${allDone ? "text-lock-light" : "text-gray-500"}`}>{done}/{list.length}</span>}
           <button className="text-sm font-medium text-lock-light" onClick={() => setEditing(!editing)}>
             {editing ? "Done" : "Edit"}
           </button>
@@ -71,6 +71,11 @@ export default function NonNegotiables({ uid, date = todayStr(), onChange }) {
         </>
       )}
 
+      {!list.length && !editing && (
+        <button className="w-full rounded-xl bg-gray-50 py-4 text-center text-sm text-gray-400" onClick={() => setEditing(true)}>
+          No non-negotiables yet — tap to add the few things you'll do every day.
+        </button>
+      )}
       <div className="space-y-1.5">
         {(editing ? all : list).map((i) => {
           const on = !!checks[i.id];
@@ -82,7 +87,6 @@ export default function NonNegotiables({ uid, date = todayStr(), onChange }) {
                   {on && <Icon name="check" className="h-3 w-3" strokeWidth={3} />}
                 </span>
                 <span className={`truncate text-sm font-medium ${on ? "text-lock" : ""}`}>{i.label}</span>
-                {i.trading && editing && <span className="ml-auto text-[10px] text-gray-400">trading</span>}
               </button>
               {editing ? (
                 <button aria-label="Remove" className="shrink-0 rounded-full bg-red-50 p-1.5 text-red-500 active:scale-90"
