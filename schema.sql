@@ -65,6 +65,14 @@ create table if not exists journal (
 alter table journal add column if not exists sleep jsonb;
 alter table journal add column if not exists nn jsonb default '{}'::jsonb;
 
+-- Private per-user settings (non-negotiables list). Owner-only — unlike profiles,
+-- which any signed-in user can read for username search.
+create table if not exists user_settings (
+  user_id uuid primary key references profiles(id) on delete cascade,
+  nn_list jsonb not null default '[]'::jsonb,
+  updated_at timestamptz default now()
+);
+
 create table if not exists checkins (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade,
@@ -120,6 +128,7 @@ alter table profiles    enable row level security;
 alter table friendships enable row level security;
 alter table days        enable row level security;
 alter table journal     enable row level security;
+alter table user_settings enable row level security;
 alter table checkins    enable row level security;
 alter table feed_events enable row level security;
 alter table reactions   enable row level security;
@@ -138,6 +147,7 @@ create policy "friendships delete" on friendships for delete using (auth.uid() i
 -- days + journal: owner only, always. Friends never see these rows.
 create policy "days own"    on days    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "journal own" on journal for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "user_settings own" on user_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- checkins: owner writes, friends read (explicit weekly post)
 create policy "checkins own"     on checkins for all    using (auth.uid() = user_id) with check (auth.uid() = user_id);
