@@ -55,9 +55,15 @@ create table if not exists journal (
   pm jsonb,
   mood text,
   weight numeric,
+  sleep jsonb,                    -- {hours, score, readiness} from Oura
+  nn jsonb default '{}'::jsonb,   -- non-negotiables checked today {id: true}
   updated_at timestamptz default now(),
   primary key (user_id, date)
 );
+
+-- Upgrading an existing project? Run just these two lines:
+alter table journal add column if not exists sleep jsonb;
+alter table journal add column if not exists nn jsonb default '{}'::jsonb;
 
 create table if not exists checkins (
   id uuid primary key default gen_random_uuid(),
