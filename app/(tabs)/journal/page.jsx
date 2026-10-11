@@ -342,11 +342,11 @@ function SleepSheet({ open, sleep, onClose, onSave }) {
   return (
     <Sheet open onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="bed" className="h-5 w-5" /> Last night's sleep</span>}>
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {[["bed", "Went to bed"], ["wake", "Woke up"]].map(([k, label]) => (
-            <div key={k}>
+            <div key={k} className="min-w-0">
               <label className="mb-1 block text-[11px] font-medium text-gray-500">{label}</label>
-              <input className="input px-2 text-center" type="time" value={s[k] || ""} onChange={(e) => setTime(k, e.target.value)} />
+              <input className="input time-input px-2 text-center" type="time" value={s[k] || ""} onChange={(e) => setTime(k, e.target.value)} />
             </div>
           ))}
         </div>
@@ -360,7 +360,7 @@ function SleepSheet({ open, sleep, onClose, onSave }) {
           <div className="flex gap-1">
             {QUALITY.map((q, i) => (
               <button key={q} onClick={() => set({ quality: i + 1 })}
-                className={`flex-1 rounded-lg py-2 text-[12px] font-semibold transition active:scale-95 ${
+                className={`min-w-0 flex-1 truncate rounded-lg px-0.5 py-2 text-[11px] font-semibold transition active:scale-95 ${
                   +s.quality === i + 1 ? "bg-lock text-white" : "bg-gray-100 text-gray-500"}`}>{q}</button>
             ))}
           </div>
@@ -369,9 +369,9 @@ function SleepSheet({ open, sleep, onClose, onSave }) {
           {tracker ? "− Hide sleep tracker scores" : "+ Add scores from a sleep tracker (Oura, Whoop, Apple Watch…)"}
         </button>
         {tracker && (
-          <div className="grid grid-cols-2 gap-2">
-            {[["score", "Sleep score", "82"], ["readiness", "Readiness / recovery", "78"]].map(([k, label, ph]) => (
-              <div key={k}>
+          <div className="grid grid-cols-2 gap-3">
+            {[["score", "Sleep score", "82"], ["readiness", "Readiness", "78"]].map(([k, label, ph]) => (
+              <div key={k} className="min-w-0">
                 <label className="mb-1 block text-[11px] font-medium text-gray-500">{label}</label>
                 <input className="input px-2 text-center" type="text" inputMode="decimal" placeholder={ph}
                   value={s[k] ?? ""} onChange={(e) => set({ [k]: num(e.target.value) })} />
