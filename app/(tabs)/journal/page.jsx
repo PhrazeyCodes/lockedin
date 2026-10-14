@@ -26,7 +26,8 @@ export default function Journal() {
   const [history, setHistory] = useState([]);
   const [flow, setFlow] = useState(null); // 'am' | 'pm'
   const [streak, setStreak] = useState(0);
-  const [viewing, setViewing] = useState(null); // past entry being read
+  const [viewing, setViewing] = useState(null); // date open in the day view
+  const [editDate, setEditDate] = useState(null); // day being edited from the day view (null = today)
   const [calOpen, setCalOpen] = useState(false);
   const [sleepOpen, setSleepOpen] = useState(false);
   const [dayRows, setDayRows] = useState([]); // days.tasks for to-do completion
@@ -49,6 +50,7 @@ export default function Journal() {
     if (!has.has(d)) d = shiftDay(d, -1);
     while (has.has(d)) { s++; d = shiftDay(d, -1); }
     setStreak(s);
+    return rows;
   }
 
   useEffect(() => { if (user) refresh(); }, [user]); // eslint-disable-line
@@ -67,20 +69,50 @@ export default function Journal() {
 
   if (loading) return null;
 
-  async function save(patch) {
-    const row = { user_id: user.id, date, ...patch };
-    await supabase.from("journal").upsert(row, { onConflict: "user_id,date" });
-    await markJournalDone(user.id, date);
+  const target = editDate || date; // which day the open editor writes to
+  const entryFor = (d) => history.find((r) => r.date === d) || null;
+  const tasksFor = (d) => dayRows.find((r) => r.date === d)?.tasks || [];
+
+  // Close an editor; if it was opened from the day view, go back to that day
+  function closeEditor() {
     setFlow(null);
+    setSleepOpen(false);
+    if (editDate) setViewing(editDate);
+    setEditDate(null);
+  }
+
+  async function save(patch) {
+    const row = { user_id: user.id, date: target, ...patch, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from("journal").upsert(row, { onConflict: "user_id,date" });
+    if (error) { showToast("Couldn't save — try again"); return; }
+    if (target === date) await markJournalDone(user.id, date); // friends only see "journaled today"
     showToast("Journal saved");
-    refresh();
+    await refresh();
+    closeEditor();
   }
 
   async function saveSleep(sleep) {
-    await patchJournal(user.id, date, { sleep });
-    setSleepOpen(false);
-    showToast("Sleep logged");
-    refresh();
+    const ok = await patchJournal(user.id, target, { sleep });
+    if (!ok) { showToast("Couldn't save — try again"); return; }
+    showToast("Sleep saved");
+    await refresh();
+    closeEditor();
+  }
+
+  // From the day view: open an editor for that day
+  function editDay(d, which) {
+    setViewing(null);
+    setEditDate(d); // remembered so closing the editor goes back to this day
+    if (which === "sleep") setSleepOpen(true);
+    else setFlow(which);
+  }
+
+  async function toggleNN(d, id) {
+    const nn = { ...(entryFor(d)?.nn || {}), [id]: !entryFor(d)?.nn?.[id] };
+    setHistory((rows) => rows.some((r) => r.date === d)
+      ? rows.map((r) => (r.date === d ? { ...r, nn } : r))
+      : [{ date: d, nn }, ...rows]);
+    if (!(await patchJournal(user.id, d, { nn }))) showToast("Couldn't save — try again");
   }
 
   const weights = history.filter((h) => h.weight).slice(0, 30).reverse();
@@ -90,11 +122,11 @@ export default function Journal() {
   const todayTasks = taskStats({ tasks: todayTaskList });
 
   // Notes live on the task itself (days.tasks[].note — owner-only, never in the feed)
-  async function saveTaskNote(taskId, note) {
-    const day = await loadDay(user.id, date);
+  async function saveTaskNote(taskId, note, d = date) {
+    const day = await loadDay(user.id, d);
     day.tasks = (day.tasks || []).map((t) => (t.id === taskId ? { ...t, note } : t));
-    await saveDay(user.id, date, day);
-    setDayRows((rows) => rows.map((r) => (r.date === date ? { ...r, tasks: day.tasks } : r)));
+    await saveDay(user.id, d, day);
+    setDayRows((rows) => rows.map((r) => (r.date === d ? { ...r, tasks: day.tasks } : r)));
   }
   const shown = history.filter((h) => h.am || h.pm || h.sleep || h.weight || h.mood);
 
@@ -172,7 +204,7 @@ export default function Journal() {
       <div className="space-y-2">
         {shown.map((h) => (
           <button key={h.date} className="card flex w-full items-center gap-3 py-3 text-left active:scale-[0.99]"
-            onClick={() => setViewing(h)}>
+            onClick={() => setViewing(h.date)}>
             <span className="flex items-center gap-1 text-gray-600">
               {(h.am?.mood || h.pm?.mood)
                 ? <>
@@ -201,17 +233,19 @@ export default function Journal() {
         ))}
       </div>
 
-      <Flow flow={flow} entry={entry} tasks={todayTasks}
-        onClose={() => setFlow(null)} onSave={save} />
-      <SleepSheet open={sleepOpen} sleep={entry?.sleep} onClose={() => setSleepOpen(false)} onSave={saveSleep} />
-      <EntryViewer entry={viewing} nnList={nnList}
-        tasks={viewing ? dayRows.find((d) => d.date === viewing.date)?.tasks || [] : []} onClose={() => setViewing(null)}
-        onEdit={viewing?.date === date ? (which) => { setViewing(null); setFlow(which); } : null} />
+      <Flow flow={flow} entry={entryFor(target)} tasks={taskStats({ tasks: tasksFor(target) })}
+        date={target} onClose={closeEditor} onSave={save} />
+      <SleepSheet open={sleepOpen} sleep={entryFor(target)?.sleep} date={target} onClose={closeEditor} onSave={saveSleep} />
+      <DayView date={viewing} entry={viewing ? entryFor(viewing) : null} nnList={nnList} isToday={viewing === date}
+        tasks={viewing ? tasksFor(viewing) : []} onClose={() => setViewing(null)}
+        onEdit={(which) => editDay(viewing, which)}
+        onToggleNN={(id) => toggleNN(viewing, id)}
+        onSaveNote={(taskId, note) => saveTaskNote(taskId, note, viewing)} />
       <HistoryCalendar open={calOpen} onClose={() => setCalOpen(false)} uid={user?.id} source="journal"
         onPick={(d) => {
-          const h = history.find((x) => x.date === d);
-          if (h) setViewing(h);
-          else showToast("No entry that day");
+          if (d > date) { showToast("Can't journal the future"); return; }
+          setCalOpen(false);
+          setViewing(d); // any past day opens, even empty, so missed days can be filled in
         }} />
     </div>
   );
@@ -232,74 +266,99 @@ function Field({ label, children }) {
   );
 }
 
-function EntryViewer({ entry, nnList = [], tasks = [], onClose, onEdit }) {
-  if (!entry) return null;
+function fmtShort(d) {
+  return new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function fmtLong(d) {
+  return new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+}
+
+// One section of the day view: title, summary, and a single clear Edit / Add button
+function Section({ icon, title, extra, filled, onEdit, children }) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex min-w-0 items-center gap-1.5 font-bold">
+          <Icon name={icon} className="h-[18px] w-[18px] shrink-0 text-lock" /> {title} {extra}
+        </h3>
+        {onEdit && (
+          <button onClick={onEdit}
+            className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-[12px] font-semibold active:scale-95 ${
+              filled ? "bg-gray-100 text-gray-700" : "bg-lock text-white"}`}>
+            <Icon name={filled ? "pencil" : "plus"} className="h-3.5 w-3.5" strokeWidth={2.2} />
+            {filled ? "Edit" : "Add"}
+          </button>
+        )}
+      </div>
+      {children && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+// Everything about one day — every part editable, for today or any past day
+function DayView({ date, entry, nnList = [], tasks = [], isToday, onClose, onEdit, onToggleNN, onSaveNote }) {
+  if (!date) return null;
+  const e = entry || {};
   const AM = [["intentions", "Intentions"], ["gratitude", "Gratitude"], ["focus", "Focus"]];
   const PM = [["tasks_note", "How the to-do went"], ["wins", "Wins"], ["improve", "To improve"], ["thoughts", "Thoughts"]];
-  const pm = entry.pm || {};
+  const pm = e.pm || {};
+  const sl = e.sleep;
   return (
     <Sheet open onClose={onClose}
-      title={new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}>
-      <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-gray-500">
-        {pm.rating && <RatingChip value={pm.rating} />}
-        {!entry.am?.mood && !pm.mood && entry.mood && <Mood value={entry.mood} className="h-6 w-6" />}
-        {entry.weight && <span className="flex items-center gap-1.5"><Icon name="scale" className="h-4 w-4" /> {entry.weight} lb</span>}
-        {entry.sleep?.hours && <span className="flex items-center gap-1.5"><Icon name="bed" className="h-4 w-4" /> {entry.sleep.hours}h
-          {entry.sleep.quality && ` · ${QUALITY[entry.sleep.quality - 1]}`}{entry.sleep.score && ` · score ${entry.sleep.score}`}</span>}
-        {pm.energy && <span className="flex items-center gap-1.5"><Icon name="zap" className="h-4 w-4" /> {pm.energy}/5</span>}
-        {pm.deep_work && <span className="flex items-center gap-1.5"><Icon name="clock" className="h-4 w-4" /> {pm.deep_work}h deep</span>}
+      title={<span className="flex items-center gap-2">{isToday ? "Today" : fmtLong(date)} {pm.rating && <RatingChip value={pm.rating} />}</span>}>
+      <div className="space-y-2.5">
+        <Section icon="bed" title="Sleep" filled={!!sl} onEdit={() => onEdit("sleep")}>
+          {sl
+            ? <p className="text-sm text-gray-600">
+                {[sl.hours && `${sl.hours}h`, sl.quality && QUALITY[sl.quality - 1],
+                  sl.bed && sl.wake && `${sl.bed}–${sl.wake}`, sl.score && `score ${sl.score}`,
+                  sl.readiness && `readiness ${sl.readiness}`].filter(Boolean).join(" · ")}
+              </p>
+            : null}
+        </Section>
+
+        <Section icon="sunrise" title="Morning" extra={<Mood value={e.am?.mood} />} filled={!!e.am} onEdit={() => onEdit("am")}>
+          {e.am && (
+            <>
+              {AM.map(([k, label]) => e.am[k] && <Field key={k} label={label}>{e.am[k]}</Field>)}
+              {e.weight && <p className="text-[12px] text-gray-500">Weight: {e.weight} lb</p>}
+            </>
+          )}
+        </Section>
+
+        <Section icon="moon" title="Night" extra={<Mood value={pm.mood} />} filled={!!e.pm} onEdit={() => onEdit("pm")}>
+          {e.pm && (
+            <>
+              {(pm.energy || pm.deep_work) && (
+                <p className="mb-1.5 text-[12px] text-gray-500">
+                  {[pm.energy && `Energy ${pm.energy}/5`, pm.deep_work && `${pm.deep_work}h deep work`].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {PM.map(([k, label]) => pm[k] && <Field key={k} label={label}>{pm[k]}</Field>)}
+            </>
+          )}
+        </Section>
+
+        {nnList.length > 0 && (
+          <Section icon="target" title="Non-negotiables"
+            extra={<span className="text-sm font-normal text-gray-400">{nnList.filter((i) => e.nn?.[i.id]).length}/{nnList.length}</span>}>
+            <div className="space-y-1.5">
+              {nnList.map((i) => {
+                const on = !!e.nn?.[i.id];
+                return (
+                  <button key={i.id} onClick={() => onToggleNN(i.id)}
+                    className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm active:scale-[0.98] ${on ? "bg-lock-faint text-lock" : "bg-gray-50"}`}>
+                    <TaskCheck done={on} /> <span className="truncate font-medium">{i.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
+        {tasks.length > 0 && <TodoCard tasks={tasks} onSaveNote={onSaveNote} flat />}
       </div>
-      {nnList.length > 0 && entry.nn && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {nnList.map((i) => (
-            <span key={i.id} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${entry.nn[i.id] ? "bg-lock-faint text-lock" : "bg-gray-100 text-gray-400 line-through"}`}>
-              {i.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {tasks.length > 0 && (
-        <div className="mb-3">
-          <h3 className="mb-1 flex items-center gap-1.5 font-bold">
-            <Icon name="clipboard" className="h-[18px] w-[18px]" /> To-do
-            <span className="text-sm font-normal text-gray-400">{tasks.filter((t) => t.done).length}/{tasks.length}</span>
-          </h3>
-          <div className="space-y-1.5">
-            {tasks.map((t) => (
-              <div key={t.id} className="rounded-xl bg-gray-50 p-2.5">
-                <div className="flex items-center gap-2 text-sm">
-                  <TaskCheck done={t.done} />
-                  <span className={t.done ? "text-gray-400 line-through" : "font-medium"}>{t.title}</span>
-                </div>
-                {t.note && <p className="mt-1 whitespace-pre-wrap pl-7 text-[13px] text-gray-600">{t.note}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {entry.am && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center justify-between">
-            <h3 className="flex items-center gap-1.5 font-bold">
-              <Icon name="sunrise" className="h-[18px] w-[18px]" /> Morning <Mood value={entry.am.mood} />
-            </h3>
-            {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("am")}>Edit</button>}
-          </div>
-          {AM.map(([k, label]) => entry.am[k] && <Field key={k} label={label}>{entry.am[k]}</Field>)}
-        </div>
-      )}
-      {entry.pm && (
-        <div className="mb-2">
-          <div className="mb-1 flex items-center justify-between">
-            <h3 className="flex items-center gap-1.5 font-bold">
-              <Icon name="moon" className="h-[18px] w-[18px]" /> Night <Mood value={pm.mood} />
-            </h3>
-            {onEdit && <button className="text-sm font-medium text-lock-light" onClick={() => onEdit("pm")}>Edit</button>}
-          </div>
-          {PM.map(([k, label]) => pm[k] && <Field key={k} label={label}>{pm[k]}</Field>)}
-        </div>
-      )}
-      {!entry.am && !entry.pm && <p className="py-4 text-center text-sm text-gray-400">No morning or night entry that day.</p>}
     </Sheet>
   );
 }
@@ -321,7 +380,7 @@ function hoursBetween(bed, wake) {
   return Math.round((mins / 60) * 4) / 4; // nearest 15 min
 }
 
-function SleepSheet({ open, sleep, onClose, onSave }) {
+function SleepSheet({ open, sleep, date, onClose, onSave }) {
   const [s, setS] = useState({});
   const [tracker, setTracker] = useState(false);
   useEffect(() => {
@@ -340,7 +399,7 @@ function SleepSheet({ open, sleep, onClose, onSave }) {
   };
 
   return (
-    <Sheet open onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="bed" className="h-5 w-5" /> Last night's sleep</span>}>
+    <Sheet open onClose={onClose} title={<span className="flex items-center gap-2"><Icon name="bed" className="h-5 w-5" /> {date && date !== todayStr() ? <>Sleep <span className="text-sm font-medium text-gray-400">· night before {fmtShort(date)}</span></> : "Last night's sleep"}</span>}>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           {[["bed", "Went to bed"], ["wake", "Woke up"]].map(([k, label]) => (
@@ -407,7 +466,7 @@ function Scale({ n, value, onPick, label }) {
   );
 }
 
-function Flow({ flow, entry, tasks, onClose, onSave }) {
+function Flow({ flow, entry, tasks, date, onClose, onSave }) {
   const [data, setData] = useState({});
   const [mood, setMood] = useState("");
   const [weight, setWeight] = useState("");
@@ -437,6 +496,7 @@ function Flow({ flow, entry, tasks, onClose, onSave }) {
     <Sheet open onClose={onClose}
       title={<span className="flex items-center gap-2">
         <Icon name={am ? "sunrise" : "moon"} className="h-5 w-5" /> {am ? "Morning" : "Night"}
+        {date && date !== todayStr() && <span className="text-sm font-medium text-gray-400">· {fmtShort(date)}</span>}
       </span>}>
       <div className="space-y-3">
         {!am && (
@@ -446,7 +506,7 @@ function Flow({ flow, entry, tasks, onClose, onSave }) {
             <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2.5">
               <span className="text-sm font-medium text-gray-600">To-do list</span>
               <span className={`text-sm font-bold ${tasks.total && tasks.done === tasks.total ? "text-lock-light" : "text-gray-700"}`}>
-                {tasks.total ? `${tasks.done}/${tasks.total} cleared` : "No tasks in Plan today"}
+                {tasks.total ? `${tasks.done}/${tasks.total} cleared` : "No tasks in Plan that day"}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -495,7 +555,7 @@ function TaskCheck({ done }) {
 }
 
 // Today's to-dos from the Plan tab: what got checked off, plus a note per task.
-function TodoCard({ tasks, onSaveNote }) {
+function TodoCard({ tasks, onSaveNote, flat = false }) {
   const [open, setOpen] = useState(null); // task id whose note is being edited
   const [draft, setDraft] = useState("");
   const done = tasks.filter((t) => t.done).length;
@@ -507,10 +567,10 @@ function TodoCard({ tasks, onSaveNote }) {
   }
 
   return (
-    <div className="card mb-3">
+    <div className={flat ? "rounded-2xl border border-gray-100 bg-white p-3" : "card mb-3"}>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="flex items-center gap-1.5 font-bold">
-          <Icon name="clipboard" className="h-[18px] w-[18px] text-lock" /> Today's to-do
+          <Icon name="clipboard" className="h-[18px] w-[18px] text-lock" /> {flat ? "To-do" : "Today's to-do"}
         </h3>
         {tasks.length > 0 && (
           <span className={`text-sm font-semibold ${done === tasks.length ? "text-lock-light" : "text-gray-500"}`}>{done}/{tasks.length}</span>
