@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/useUser";
 import { loadDay, saveDay, syncFeed, blankDay } from "@/lib/store";
 import { todayStr, fmtDate, weekDates } from "@/lib/dates";
@@ -191,6 +191,62 @@ export default function Lift() {
   const [newType, setNewType] = useState("");
   const [runOpen, setRunOpen] = useState(false);
 
+  // Drag-to-reorder exercises: hold the grip handle and slide the card up or down.
+  // While dragging, only local state changes; the new order is saved on release.
+  const cardRefs = useRef([]);
+  const dragRef = useRef(null); // { from, startY, rects }
+  const [drag, setDrag] = useState(null); // { from, over, dy }
+  const GAP = 12; // matches mb-3 between cards
+
+  function onGripDown(ei, e) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const rects = cardRefs.current.slice(0, day.lift?.exercises?.length || 0).map((el) => el?.getBoundingClientRect());
+    dragRef.current = { from: ei, startY: e.clientY, rects };
+    setDrag({ from: ei, over: ei, dy: 0 });
+    navigator.vibrate?.(10);
+  }
+
+  function onGripMove(e) {
+    const ds = dragRef.current;
+    if (!ds) return;
+    const dy = e.clientY - ds.startY;
+    const r = ds.rects[ds.from];
+    const center = r.top + r.height / 2 + dy;
+    let over = ds.from;
+    ds.rects.forEach((rc, i) => {
+      if (!rc || i === ds.from) return;
+      const mid = rc.top + rc.height / 2;
+      if (i > ds.from && center > mid) over = Math.max(over, i);
+      if (i < ds.from && center < mid) over = Math.min(over, i);
+    });
+    setDrag({ from: ds.from, over, dy });
+  }
+
+  function onGripUp() {
+    const ds = dragRef.current;
+    dragRef.current = null;
+    if (ds && drag && drag.over !== ds.from) {
+      const { from } = ds, to = drag.over;
+      update((d) => {
+        const [moved] = d.lift.exercises.splice(from, 1);
+        d.lift.exercises.splice(to, 0, moved);
+        return d;
+      });
+    }
+    setDrag(null);
+  }
+
+  function dragStyle(i) {
+    if (!drag) return undefined;
+    const { from, over, dy } = drag;
+    if (i === from) return { transform: `translateY(${dy}px)`, zIndex: 20, position: "relative", transition: "none" };
+    const h = (dragRef.current?.rects[from]?.height || 0) + GAP;
+    if (from < over && i > from && i <= over) return { transform: `translateY(${-h}px)`, transition: "transform 150ms" };
+    if (over < from && i >= over && i < from) return { transform: `translateY(${h}px)`, transition: "transform 150ms" };
+    return { transition: "transform 150ms" };
+  }
+
   useEffect(() => { setCustoms(getCustomSessions()); }, []);
 
   useEffect(() => {
@@ -283,8 +339,20 @@ export default function Lift() {
           </div>
 
           {lift.exercises.map((ex, ei) => (
-            <div key={ei} className="card mb-3">
+            <div key={ei} ref={(el) => (cardRefs.current[ei] = el)}
+              className={`card mb-3 ${drag?.from === ei ? "shadow-xl ring-2 ring-lock-light" : ""}`}
+              style={dragStyle(ei)}>
               <div className="mb-1 flex items-center justify-between">
+                {lift.exercises.length > 1 && (
+                  <button aria-label="Drag to reorder exercise"
+                    className="-ml-1 mr-1 flex h-8 w-6 shrink-0 cursor-grab touch-none select-none items-center justify-center text-gray-300 active:cursor-grabbing active:text-gray-500"
+                    onPointerDown={(e) => onGripDown(ei, e)}
+                    onPointerMove={onGripMove}
+                    onPointerUp={onGripUp}
+                    onPointerCancel={onGripUp}>
+                    <Icon name="grip" className="h-5 w-5" strokeWidth={2.4} />
+                  </button>
+                )}
                 <input className="flex-1 bg-transparent font-bold outline-none" value={ex.name}
                   onChange={(e) => update((d) => { d.lift.exercises[ei].name = e.target.value; return d; })} />
                 <button aria-label="Delete exercise" className="p-1 text-gray-300 active:text-red-400"
