@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { askForProof } from "@/lib/proof";
 import Link from "next/link";
 import { useUser } from "@/lib/useUser";
 import { loadDay, saveDay, syncFeed, mealTotals, targetsFor, isRestDay, foodStreak, pushRecent, blankDay } from "@/lib/store";
@@ -247,6 +248,7 @@ export default function Home() {
           const f = logSlot ? { ...food, slot: logSlot } : food;
           update((d) => { d.meals.push(f); return d; });
           showToast("Logged");
+          if (date === todayStr()) askForProof("food", { title: "Meal logged — snap your plate?", stamp: f.slot || "Meal" });
         }} />
 
       {/* Nudge popup */}
