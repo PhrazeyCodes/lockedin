@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Sheet from "./Sheet";
 import Icon from "./Icon";
 import FoodEditor from "./FoodEditor";
-import { scanImage, describeFood, searchUSDA, lookupBarcode, fileToScanPayload } from "@/lib/nutrition";
+import { scanImage, describeFood, searchUSDA, lookupBarcode, fileToScanPayload, mealThumb } from "@/lib/nutrition";
 import { getRecents } from "@/lib/store";
 
 // MacroFactor-style unified logger. Every path lands in the same FoodEditor.
@@ -25,9 +25,9 @@ export default function Logger({ open, onClose, onLog }) {
     if (!file) return;
     setBusy(true); setError("");
     try {
-      const { base64, mime } = await fileToScanPayload(file);
+      const [{ base64, mime }, thumb] = await Promise.all([fileToScanPayload(file), mealThumb(file)]);
       const result = await scanImage(base64, mime);
-      toEditor({ ...result, qty: 1, unit: "serving", photo: `data:image/jpeg;base64,${base64}` });
+      toEditor({ ...result, qty: 1, unit: "serving", photo: thumb });
     } catch (err) { setError(err.message); }
     setBusy(false);
     e.target.value = "";
