@@ -13,6 +13,41 @@ import { PROOF_KINDS } from "@/lib/proof";
 // Reaction values stay as stored emoji for backwards compatibility; rendered as icons.
 const EMOJIS = REACTION_VALUES;
 
+// ---------- speed helpers ----------
+const FEED_CACHE = "lockedin_v1:feedcache:";
+const URL_CACHE = "lockedin_v1:signedurls";
+const URL_TTL = 3600; // seconds a signed link is valid
+
+function readUrlCache() {
+  try { return JSON.parse(localStorage.getItem(URL_CACHE) || "{}"); } catch { return {}; }
+}
+// still-valid links only (with a 10-minute safety margin)
+function cachedUrls() {
+  const now = Date.now(), out = {};
+  for (const [p, v] of Object.entries(readUrlCache())) if (v.exp - 600_000 > now) out[p] = v.url;
+  return out;
+}
+// Sign every path in ONE request, reusing links that are still valid
+async function signAll(paths) {
+  const uniq = [...new Set(paths)];
+  if (!uniq.length) return {};
+  const cache = readUrlCache(), now = Date.now(), out = {};
+  const need = [];
+  for (const p of uniq) {
+    if (cache[p] && cache[p].exp - 600_000 > now) out[p] = cache[p].url; else need.push(p);
+  }
+  if (need.length) {
+    const { data } = await supabase.storage.from("checkins").createSignedUrls(need, URL_TTL);
+    for (const r of data || []) {
+      if (r.signedUrl && r.path) { out[r.path] = r.signedUrl; cache[r.path] = { url: r.signedUrl, exp: now + URL_TTL * 1000 }; }
+    }
+    // keep the cache small: drop expired links
+    for (const [p, v] of Object.entries(cache)) if (v.exp < now) delete cache[p];
+    try { localStorage.setItem(URL_CACHE, JSON.stringify(cache)); } catch {}
+  }
+  return out;
+}
+
 export default function Social() {
   const { user, profile, loading } = useUser();
   const [friends, setFriends] = useState([]);       // accepted profiles
@@ -35,69 +70,84 @@ export default function Social() {
 
   async function refresh() {
     const me = user.id;
-    const { data: fr } = await supabase.from("friendships").select("*")
-      .or(`user_a.eq.${me},user_b.eq.${me}`);
+    const today = todayStr();
+    // 1) everything that only needs your id goes out at once
+    const [{ data: fr }, { data: nd }, { data: rec }] = await Promise.all([
+      supabase.from("friendships").select("*").or(`user_a.eq.${me},user_b.eq.${me}`),
+      supabase.from("nudges").select("to_user").eq("from_user", me).eq("date", today),
+      supabase.from("nudges").select("*").eq("to_user", me).eq("date", today),
+    ]);
+    setNudgedToday(new Set((nd || []).map((n) => n.to_user)));
+    setMyNudges(rec || []);
+
     const rows = fr || [];
     const acceptedIds = rows.filter((r) => r.status === "accepted")
       .map((r) => (r.user_a === me ? r.user_b : r.user_a));
     const inReqs = rows.filter((r) => r.status === "pending" && r.requested_by !== me);
-
     const allIds = [...new Set([me, ...acceptedIds, ...inReqs.map((r) => (r.user_a === me ? r.user_b : r.user_a))])];
-    const { data: profs } = await supabase.from("profiles")
-      .select("id, username, display_name, goal_text, goal_weight, start_weight").in("id", allIds);
+
+    // 2) profiles + the feed together
+    const since = addDays(today, -13);
+    const [{ data: profs }, { data: evs }] = await Promise.all([
+      supabase.from("profiles")
+        .select("id, username, display_name, goal_text, goal_weight, start_weight").in("id", allIds),
+      supabase.from("feed_events").select("*")
+        .in("user_id", [me, ...acceptedIds]).gte("date", since)
+        .order("date", { ascending: false }).order("created_at", { ascending: false }),
+    ]);
     const pmap = Object.fromEntries((profs || []).map((p) => [p.id, p]));
-
-    setFriends(acceptedIds.map((id) => pmap[id]).filter(Boolean));
-    setPendingIn(inReqs.map((r) => ({ ...r, profile: pmap[r.user_a === me ? r.user_b : r.user_a] })));
-
-    const since = addDays(todayStr(), -13);
-    const { data: evs } = await supabase.from("feed_events").select("*")
-      .in("user_id", [me, ...acceptedIds]).gte("date", since)
-      .order("date", { ascending: false }).order("created_at", { ascending: false });
+    const nextFriends = acceptedIds.map((id) => pmap[id]).filter(Boolean);
+    const nextPending = inReqs.map((r) => ({ ...r, profile: pmap[r.user_a === me ? r.user_b : r.user_a] }));
+    setFriends(nextFriends);
+    setPendingIn(nextPending);
     setEvents(evs || []);
 
-    if (evs?.length) {
-      const evIds = evs.map((e) => e.id);
-      const { data: rx } = await supabase.from("reactions").select("*").in("event_id", evIds);
-      setReactions(rx || []);
-      const { data: lk } = await supabase.from("likes").select("*").in("event_id", evIds);
-      setLikes(lk || []);
-      // signed urls for checkin + photo-update photos
-      const paths = [];
-      for (const e of evs) {
-        if (e.type === "checkin") {
-          const cp = e.summary?.photo_paths?.length ? e.summary.photo_paths : [e.summary?.photo_path];
-          for (const p of cp) if (p) paths.push(p);
-        }
-        if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
-        if (e.type === "post" || e.type === "run")
-          for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
+    // 3) reactions, likes and every photo/voice link in parallel — links signed in ONE request
+    const evIds = (evs || []).map((e) => e.id);
+    const paths = [];
+    for (const e of evs || []) {
+      if (e.type === "checkin") {
+        const cp = e.summary?.photo_paths?.length ? e.summary.photo_paths : [e.summary?.photo_path];
+        for (const p of cp) if (p) paths.push(p);
       }
-      const urls = {};
-      for (const p of paths) {
-        const { data } = await supabase.storage.from("checkins").createSignedUrl(p, 3600);
-        if (data?.signedUrl) urls[p] = data.signedUrl;
-      }
-      setPhotoUrls(urls);
+      if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
+      if (e.type === "post" || e.type === "run")
+        for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
     }
-
-    const { data: nd } = await supabase.from("nudges").select("to_user").eq("from_user", me).eq("date", todayStr());
-    setNudgedToday(new Set((nd || []).map((n) => n.to_user)));
-
-    // nudges received today (with voice memos)
-    const { data: rec } = await supabase.from("nudges").select("*").eq("to_user", me).eq("date", todayStr());
-    setMyNudges(rec || []);
     const audioPaths = (rec || []).filter((n) => n.audio_path).map((n) => n.audio_path);
     for (const e of evs || []) {
       if (e.type === "post") for (const it of e.summary?.items || []) if (it.audio_path) audioPaths.push(it.audio_path);
     }
-    const aurls = {};
-    for (const a of audioPaths) {
-      const { data } = await supabase.storage.from("checkins").createSignedUrl(a, 3600);
-      if (data?.signedUrl) aurls[a] = data.signedUrl;
-    }
+    const [{ data: rx }, { data: lk }, urls, aurls] = await Promise.all([
+      evIds.length ? supabase.from("reactions").select("*").in("event_id", evIds) : { data: [] },
+      evIds.length ? supabase.from("likes").select("*").in("event_id", evIds) : { data: [] },
+      signAll(paths),
+      signAll(audioPaths),
+    ]);
+    setReactions(rx || []);
+    setLikes(lk || []);
+    setPhotoUrls(urls);
     setAudioUrls(aurls);
+
+    // remember this feed so the next visit shows it instantly
+    try {
+      localStorage.setItem(FEED_CACHE + me, JSON.stringify({
+        friends: nextFriends, pendingIn: nextPending, events: evs || [], reactions: rx || [], likes: lk || [],
+      }));
+    } catch {}
   }
+
+  // Last feed you saw, shown instantly while the fresh one loads
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const c = JSON.parse(localStorage.getItem(FEED_CACHE + user.id) || "null");
+      if (!c) return;
+      setFriends(c.friends || []); setPendingIn(c.pendingIn || []); setEvents(c.events || []);
+      setReactions(c.reactions || []); setLikes(c.likes || []);
+      setPhotoUrls(cachedUrls()); setAudioUrls(cachedUrls());
+    } catch {}
+  }, [user]);
 
   useEffect(() => { if (user) refresh(); }, [user]); // eslint-disable-line
 
