@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase, resolveSession } from "@/lib/supabase";
 import Icon from "@/components/Icon";
 
 export default function Login() {
@@ -15,10 +15,13 @@ export default function Login() {
 
   // Already signed in? Skip this screen. (The home-screen icon can open straight onto /login.)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let alive = true;
+    resolveSession({ isAlive: () => alive }).then((session) => {
+      if (!alive) return;
       if (session) router.replace("/home");
       else setChecking(false);
     });
+    return () => { alive = false; };
   }, [router]);
 
   async function submit(e) {
