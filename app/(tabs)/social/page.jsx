@@ -8,6 +8,7 @@ import Sheet from "@/components/Sheet";
 import { showToast } from "@/components/Toast";
 import Icon, { REACTION_VALUES, REACTION_ICONS } from "@/components/Icon";
 import { SOCIAL_SEEN_KEY } from "@/lib/notifications";
+import { PROOF_KINDS } from "@/lib/proof";
 
 // Reaction values stay as stored emoji for backwards compatibility; rendered as icons.
 const EMOJIS = REACTION_VALUES;
@@ -417,7 +418,7 @@ function PhotoStrip({ shots }) {
     return (
       <div className="-mx-4 mt-2">
         <img src={s.url} alt="" className="max-h-80 w-full object-cover" />
-        {(s.caption || s.at) && <PhotoMeta {...s} className="px-4" />}
+        {(s.caption || s.at || s.kind) && <PhotoMeta {...s} className="px-4" />}
       </div>
     );
   }
@@ -427,7 +428,7 @@ function PhotoStrip({ shots }) {
         {shots.map((s, i) => (
           <div key={s.url || i} className="w-[80%] shrink-0 snap-center">
             <img src={s.url} alt="" className="aspect-[3/4] w-full rounded-xl object-cover" />
-            {(s.caption || s.at) && <PhotoMeta {...s} />}
+            {(s.caption || s.at || s.kind) && <PhotoMeta {...s} />}
           </div>
         ))}
       </div>
@@ -436,15 +437,25 @@ function PhotoStrip({ shots }) {
   );
 }
 
-function PhotoMeta({ caption, at, className = "" }) {
+// Under each photo: caption on the left; proof-shot type, "live" badge and time on the right.
+function PhotoMeta({ caption, at, kind, live, className = "" }) {
+  const k = kind && PROOF_KINDS[kind];
   return (
-    <div className={`mt-1 flex items-baseline justify-between gap-2 ${className}`}>
-      {caption ? <p className="text-[12px] italic text-gray-600">"{caption}"</p> : <span />}
-      {at && (
-        <span className="shrink-0 text-[10px] text-gray-400">
-          {new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-        </span>
-      )}
+    <div className={`mt-1 flex items-center justify-between gap-2 ${className}`}>
+      {caption ? <p className="min-w-0 text-[12px] italic text-gray-600">"{caption}"</p> : <span />}
+      <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-gray-400">
+        {k && (
+          <span className="flex items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 font-semibold text-gray-500">
+            <Icon name={k.icon} className="h-3 w-3" />{k.chip}
+          </span>
+        )}
+        {live && (
+          <span className="flex items-center gap-1 rounded-full bg-lock-faint px-1.5 py-0.5 font-bold uppercase tracking-wide text-lock">
+            <Icon name="camera" className="h-3 w-3" />live
+          </span>
+        )}
+        {at && new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+      </span>
     </div>
   );
 }
@@ -528,7 +539,7 @@ function EventLine({ e, p, photoUrls, audioUrls = {} }) {
   if (e.type === "photos") {
     const shots = (s.items || [])
       .filter((it) => it.path && photoUrls[it.path])
-      .map((it) => ({ url: photoUrls[it.path], caption: it.caption, at: it.at }));
+      .map((it) => ({ url: photoUrls[it.path], caption: it.caption, at: it.at, kind: it.kind, live: it.live }));
     return <PhotoStrip shots={shots} />;
   }
   if (e.type === "habits") return <p className="flex items-center gap-1.5"><Icon name="check" className="h-4 w-4 text-gray-400" />Completed {s.done}/{s.total} habits</p>;
