@@ -8,12 +8,32 @@ import Sheet from "@/components/Sheet";
 import { showToast } from "@/components/Toast";
 import Icon, { REACTION_VALUES, REACTION_ICONS } from "@/components/Icon";
 import { SOCIAL_SEEN_KEY } from "@/lib/notifications";
-import { PROOF_KINDS } from "@/lib/proof";
+import { PROOF_KINDS, uploadPhoto } from "@/lib/proof";
 
 // Reaction values stay as stored emoji for backwards compatibility; rendered as icons.
 const EMOJIS = REACTION_VALUES;
 
 // ---------- speed helpers ----------
+function photoPaths(evs) {
+  const paths = [];
+  for (const e of evs) {
+    if (e.type === "checkin") {
+      const cp = e.summary?.photo_paths?.length ? e.summary.photo_paths : [e.summary?.photo_path];
+      for (const p of cp) if (p) paths.push(p);
+    }
+    if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
+    if (e.type === "post" || e.type === "run")
+      for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
+  }
+  return paths;
+}
+function audioPathsOf(evs) {
+  const out = [];
+  for (const e of evs) if (e.type === "post") for (const it of e.summary?.items || []) if (it.audio_path) out.push(it.audio_path);
+  return out;
+}
+const FIRST_DAYS = 7;   // the feed opens with a week (what the leaderboard needs)…
+const MAX_DAYS = 28;    // …and loads older weeks as you scroll, up to four
 const FEED_CACHE = "lockedin_v1:feedcache:";
 const URL_CACHE = "lockedin_v1:signedurls";
 const URL_TTL = 3600; // seconds a signed link is valid
@@ -67,6 +87,10 @@ export default function Social() {
   const [likes, setLikes] = useState([]);             // {event_id, user_id}
   const [burst, setBurst] = useState(null);           // card key showing the heart animation
   const tapRef = useRef({});                          // last tap time per card, for double-tap
+  const spanRef = useRef(FIRST_DAYS);                 // how many days of feed are loaded
+  const [activeDays, setActiveDays] = useState(null); // uid -> Set of dates with activity (for streaks)
+  const [olderState, setOlderState] = useState("idle"); // idle | loading | done
+  const sentinelRef = useRef(null);
 
   async function refresh() {
     const me = user.id;
@@ -87,14 +111,20 @@ export default function Social() {
     const allIds = [...new Set([me, ...acceptedIds, ...inReqs.map((r) => (r.user_a === me ? r.user_b : r.user_a))])];
 
     // 2) profiles + the feed together
-    const since = addDays(today, -13);
-    const [{ data: profs }, { data: evs }] = await Promise.all([
+    const since = addDays(today, -(spanRef.current - 1));
+    const [{ data: profs }, { data: evs }, { data: act }] = await Promise.all([
       supabase.from("profiles")
         .select("id, username, display_name, goal_text, goal_weight, start_weight").in("id", allIds),
       supabase.from("feed_events").select("*")
         .in("user_id", [me, ...acceptedIds]).gte("date", since)
         .order("date", { ascending: false }).order("created_at", { ascending: false }),
+      // streaks only need which days had activity — a tiny query over 30 days
+      supabase.from("feed_events").select("user_id, date")
+        .in("user_id", [me, ...acceptedIds]).gte("date", addDays(today, -29)),
     ]);
+    const ad = {};
+    for (const r of act || []) (ad[r.user_id] = ad[r.user_id] || new Set()).add(r.date);
+    setActiveDays(ad);
     const pmap = Object.fromEntries((profs || []).map((p) => [p.id, p]));
     const nextFriends = acceptedIds.map((id) => pmap[id]).filter(Boolean);
     const nextPending = inReqs.map((r) => ({ ...r, profile: pmap[r.user_a === me ? r.user_b : r.user_a] }));
@@ -104,20 +134,8 @@ export default function Social() {
 
     // 3) reactions, likes and every photo/voice link in parallel — links signed in ONE request
     const evIds = (evs || []).map((e) => e.id);
-    const paths = [];
-    for (const e of evs || []) {
-      if (e.type === "checkin") {
-        const cp = e.summary?.photo_paths?.length ? e.summary.photo_paths : [e.summary?.photo_path];
-        for (const p of cp) if (p) paths.push(p);
-      }
-      if (e.type === "photos") for (const it of e.summary?.items || []) if (it.path) paths.push(it.path);
-      if (e.type === "post" || e.type === "run")
-        for (const it of e.summary?.items || []) for (const p of it.photo_paths || []) paths.push(p);
-    }
-    const audioPaths = (rec || []).filter((n) => n.audio_path).map((n) => n.audio_path);
-    for (const e of evs || []) {
-      if (e.type === "post") for (const it of e.summary?.items || []) if (it.audio_path) audioPaths.push(it.audio_path);
-    }
+    const paths = photoPaths(evs || []);
+    const audioPaths = [...(rec || []).filter((n) => n.audio_path).map((n) => n.audio_path), ...audioPathsOf(evs || [])];
     const [{ data: rx }, { data: lk }, urls, aurls] = await Promise.all([
       evIds.length ? supabase.from("reactions").select("*").in("event_id", evIds) : { data: [] },
       evIds.length ? supabase.from("likes").select("*").in("event_id", evIds) : { data: [] },
@@ -136,6 +154,42 @@ export default function Social() {
       }));
     } catch {}
   }
+
+  // Scrolled to the bottom: fetch the next older week and add it under the feed
+  async function loadOlder() {
+    if (olderState !== "idle" || spanRef.current >= MAX_DAYS) return;
+    setOlderState("loading");
+    const today = todayStr();
+    const to = addDays(today, -spanRef.current), from = addDays(today, -(spanRef.current + 6));
+    const ids = [user.id, ...friends.map((f) => f.id)];
+    const { data: evs } = await supabase.from("feed_events").select("*")
+      .in("user_id", ids).gte("date", from).lte("date", to)
+      .order("date", { ascending: false }).order("created_at", { ascending: false });
+    const evIds = (evs || []).map((e) => e.id);
+    const [{ data: rx }, { data: lk }, urls, aurls] = await Promise.all([
+      evIds.length ? supabase.from("reactions").select("*").in("event_id", evIds) : { data: [] },
+      evIds.length ? supabase.from("likes").select("*").in("event_id", evIds) : { data: [] },
+      signAll(photoPaths(evs || [])),
+      signAll(audioPathsOf(evs || [])),
+    ]);
+    const has = (list) => new Set(list.map((x) => x.id));
+    setEvents((cur) => { const seen = has(cur); return [...cur, ...(evs || []).filter((e) => !seen.has(e.id))]; });
+    setReactions((cur) => { const seen = has(cur); return [...cur, ...(rx || []).filter((r) => !seen.has(r.id))]; });
+    setLikes((cur) => [...cur, ...(lk || []).filter((l) => !cur.some((c) => c.event_id === l.event_id && c.user_id === l.user_id))]);
+    setPhotoUrls((cur) => ({ ...cur, ...urls }));
+    setAudioUrls((cur) => ({ ...cur, ...aurls }));
+    spanRef.current += 7;
+    setOlderState(spanRef.current >= MAX_DAYS ? "done" : "idle");
+  }
+
+  // auto-load when the bottom of the feed scrolls into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !user || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadOlder(); }, { rootMargin: "400px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }); // re-attach each render so it sees fresh state
 
   // Last feed you saw, shown instantly while the fresh one loads
   useEffect(() => {
@@ -208,12 +262,13 @@ export default function Social() {
       const days = byUser[p.id] || {};
       const last7 = Array.from({ length: 7 }, (_, i) => addDays(todayStr(), -i));
       const scores = last7.map((d) => (days[d] ? dayScore(days[d]) : 0));
+      const active = activeDays?.[p.id] || new Set(Object.keys(days));
       let streak = 0, d = todayStr();
-      if (!days[d]) d = addDays(d, -1);
-      while (days[d]) { streak++; d = addDays(d, -1); }
+      if (!active.has(d)) d = addDays(d, -1);
+      while (active.has(d)) { streak++; d = addDays(d, -1); }
       return { ...p, weekly: Math.round(scores.reduce((a, b) => a + b, 0) / 7), streak };
     }).sort((a, b) => b.weekly - a.weekly);
-  }, [events, profileMap]);
+  }, [events, profileMap, activeDays]);
 
   if (loading) return null;
 
@@ -230,16 +285,20 @@ export default function Social() {
   async function toggleLike(card, { burstOnly = false } = {}) {
     const id = card.evs[0].id;
     const mine = likes.find((l) => l.event_id === id && l.user_id === user.id);
+    // Instant: update the screen first, save in the background, undo if the save fails
     if (mine) {
       if (burstOnly) return;            // double-tapping an already-liked post keeps it liked
-      await supabase.from("likes").delete().eq("event_id", id).eq("user_id", user.id);
-      setLikes(likes.filter((l) => !(l.event_id === id && l.user_id === user.id)));
+      setLikes((ls) => ls.filter((l) => !(l.event_id === id && l.user_id === user.id)));
+      const { error } = await supabase.from("likes").delete().eq("event_id", id).eq("user_id", user.id);
+      if (error) { setLikes((ls) => [...ls, mine]); showToast("Couldn't unlike — check your connection"); }
       return;
     }
-    setLikes([...likes, { event_id: id, user_id: user.id }]);
+    const like = { event_id: id, user_id: user.id };
+    setLikes((ls) => [...ls, like]);
     setBurst(card.key);
     setTimeout(() => setBurst((k) => (k === card.key ? null : k)), 700);
-    await supabase.from("likes").insert({ event_id: id, user_id: user.id });
+    const { error } = await supabase.from("likes").insert(like);
+    if (error) { setLikes((ls) => ls.filter((l) => l !== like)); showToast("Couldn't like — check your connection"); }
   }
 
   function onCardTap(e, card) {
@@ -255,15 +314,39 @@ export default function Social() {
   }
 
   // One reaction per user per post: tap same = remove, tap different = switch
+  // Instant: the screen changes on tap; the server catches up in the background.
   async function react(groupEvents, emoji) {
     const evIds = groupEvents.map((e) => e.id);
     const mine = reactions.find((r) => evIds.includes(r.event_id) && r.user_id === user.id && r.emoji);
-    if (mine) {
-      await supabase.from("reactions").delete().eq("id", mine.id);
-      if (mine.emoji === emoji) { refresh(); return; }
+    const adding = !mine || mine.emoji !== emoji;
+    const temp = adding ? { id: "tmp-" + Date.now(), event_id: groupEvents[0].id, user_id: user.id, emoji } : null;
+    setReactions((rs) => [...rs.filter((r) => r !== mine), ...(temp ? [temp] : [])]);
+    let failed = false;
+    if (mine && !String(mine.id).startsWith("tmp-")) {
+      const { error } = await supabase.from("reactions").delete().eq("id", mine.id);
+      failed = !!error;
     }
-    await supabase.from("reactions").insert({ event_id: groupEvents[0].id, user_id: user.id, emoji });
-    refresh();
+    if (temp && !failed) {
+      const { data, error } = await supabase.from("reactions")
+        .insert({ event_id: temp.event_id, user_id: user.id, emoji }).select().single();
+      if (error) failed = true;
+      else setReactions((rs) => rs.map((r) => (r === temp ? data : r))); // swap in the real row
+    }
+    if (failed) {
+      setReactions((rs) => [...rs.filter((r) => r !== temp), ...(mine ? [mine] : [])]);
+      showToast("Couldn't react — check your connection");
+    }
+  }
+
+  async function comment(evs, text) {
+    const temp = { id: "tmp-" + Date.now(), event_id: evs[0].id, user_id: user.id, comment: text };
+    setReactions((rs) => [...rs, temp]);
+    const { data, error } = await supabase.from("reactions")
+      .insert({ event_id: temp.event_id, user_id: user.id, comment: text }).select().single();
+    if (error) {
+      setReactions((rs) => rs.filter((r) => r !== temp));
+      showToast("Comment didn't send — try again");
+    } else setReactions((rs) => rs.map((r) => (r === temp ? data : r)));
   }
 
   return (
@@ -430,8 +513,7 @@ export default function Social() {
                     </button>
                   );
                 })}
-                <CommentBox onSend={(text) => supabase.from("reactions")
-                  .insert({ event_id: evs[0].id, user_id: user.id, comment: text }).then(refresh)} />
+                <CommentBox onSend={(text) => comment(evs, text)} />
               </div>
               {myRx.filter((r) => r.comment).map((r) => (
                 <p key={r.id} className="mt-1 text-[12px] text-gray-500">
@@ -442,6 +524,13 @@ export default function Social() {
           );
         })}
       </div>
+      {groups.length > 0 && (
+        <div ref={sentinelRef} className="py-4 text-center text-[11px] text-gray-400">
+          {olderState === "loading" ? "Loading older posts…"
+            : olderState === "done" ? "That's the last 4 weeks"
+            : <button className="font-semibold text-lock-light" onClick={loadOlder}>Load older posts</button>}
+        </div>
+      )}
 
       <FriendsSheet open={friendsOpen} onClose={() => setFriendsOpen(false)} me={user?.id}
         friends={friends} pendingIn={pendingIn} onChanged={refresh} myUsername={profile?.username} />
@@ -467,7 +556,7 @@ function PhotoStrip({ shots }) {
     const s = shots[0];
     return (
       <div className="-mx-4 mt-2">
-        <img src={s.url} alt="" className="max-h-80 w-full object-cover" />
+        <img src={s.url} alt="" loading="lazy" decoding="async" className="max-h-80 w-full object-cover" />
         {(s.caption || s.at || s.kind) && <PhotoMeta {...s} className="px-4" />}
       </div>
     );
@@ -477,7 +566,7 @@ function PhotoStrip({ shots }) {
       <div className="no-scrollbar flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-0.5">
         {shots.map((s, i) => (
           <div key={s.url || i} className="w-[80%] shrink-0 snap-center">
-            <img src={s.url} alt="" className="aspect-[3/4] w-full rounded-xl object-cover" />
+            <img src={s.url} alt="" loading="lazy" decoding="async" className="aspect-[3/4] w-full rounded-xl object-cover" />
             {(s.caption || s.at || s.kind) && <PhotoMeta {...s} />}
           </div>
         ))}
@@ -724,7 +813,7 @@ function CheckinSheet({ open, onClose, user, profile, onPosted }) {
       const paths = [];
       for (const [i, f] of files.entries()) {
         const path = `${user.id}/${date}-${Date.now()}-${i}.jpg`;
-        const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
+        const { error: upErr } = await uploadPhoto(path, f);
         if (upErr) throw upErr;
         paths.push(path);
       }
@@ -937,7 +1026,7 @@ function PostComposerSheet({ open, onClose, user, date, existing, photoUrls, aud
         const photo_paths = [];
         for (const [i, f] of files.entries()) {
           const path = `${user.id}/posts/${date}-${Date.now()}-${i}.jpg`;
-          const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
+          const { error: upErr } = await uploadPhoto(path, f);
           if (upErr) throw upErr;
           photo_paths.push(path);
         }
@@ -1088,7 +1177,7 @@ function PostEditorSheet({ open, onClose, user, date, existing, photoUrls, onSav
     try {
       for (const [i, file] of list.entries()) {
         const path = `${user.id}/updates/${date}-${Date.now()}-${i}.jpg`;
-        const { error: upErr } = await supabase.storage.from("checkins").upload(path, file, { upsert: true });
+        const { error: upErr } = await uploadPhoto(path, file);
         if (upErr) throw upErr;
         setItems((p) => [...p, { path, caption: "", at: new Date().toISOString(), preview: URL.createObjectURL(file) }]);
       }
