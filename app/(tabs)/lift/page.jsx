@@ -20,7 +20,19 @@ const PALETTE = ["#0f766e", "#ea580c", "#db2777", "#4f46e5", "#059669", "#b45309
 function getCustomSessions() {
   try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || "[]"); } catch { return []; }
 }
-function saveCustomSessions(list) { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); }
+function saveCustomSessions(list) {
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch {}
+  pushToAccount({ custom_sessions: list });
+}
+
+// Templates + custom day types are synced to the user's account (auth user_metadata) so
+// they follow you between devices — on iPhone, Safari and the home-screen app have separate
+// storage, which is why a template saved in one never showed up in the other.
+// localStorage stays as an instant cache.
+async function pushToAccount(fields) {
+  const { error } = await supabase.auth.updateUser({ data: fields });
+  return !error;
+}
 function colorFor(type) {
   if (SESSIONS[type]) return SESSIONS[type];
   const c = getCustomSessions();
@@ -249,6 +261,25 @@ export default function Lift() {
 
   useEffect(() => { setCustoms(getCustomSessions()); }, []);
 
+  // Pull the latest templates / custom types from the account (or upload this device's on first run)
+  useEffect(() => {
+    if (!user) return;
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data?.user) return;
+      const md = data.user.user_metadata || {};
+      try {
+        if (md.lift_templates) localStorage.setItem(TPL_KEY, JSON.stringify(md.lift_templates));
+        else if (localStorage.getItem(TPL_KEY)) pushToAccount({ lift_templates: JSON.parse(localStorage.getItem(TPL_KEY)) });
+      } catch {}
+      if (Array.isArray(md.custom_sessions)) {
+        try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(md.custom_sessions)); } catch {}
+        setCustoms(md.custom_sessions);
+      } else if (getCustomSessions().length) {
+        pushToAccount({ custom_sessions: getCustomSessions() });
+      }
+    });
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     loadDay(user.id, date).then(setDay);
@@ -412,14 +443,15 @@ export default function Lift() {
           </div>
 
           <button className={`btn mb-3 w-full text-sm font-semibold transition ${tplSaved ? "bg-lock-light text-white" : "bg-gray-100 text-gray-800"}`}
-            onClick={() => {
-              const tpls = getLiftTemplates();
+            onClick={async () => {
+              const tpls = { ...getLiftTemplates() };
               tpls[lift.type] = lift.exercises.map((e) => ({
                 name: e.name, target: e.target || "", sets: e.sets.length, w: e.sets[0]?.w || "", note: e.note || "",
               }));
-              localStorage.setItem(TPL_KEY, JSON.stringify(tpls));
+              try { localStorage.setItem(TPL_KEY, JSON.stringify(tpls)); } catch {}
+              const synced = await pushToAccount({ lift_templates: tpls });
               setTplSaved(true);
-              showToast(`${lift.type} template saved`);
+              showToast(synced ? `${lift.type} template saved` : `${lift.type} template saved on this device only — check your connection`);
               setTimeout(() => setTplSaved(false), 1800);
             }}>
             {tplSaved ? "Template saved" : `Save as my ${lift.type} template`}
