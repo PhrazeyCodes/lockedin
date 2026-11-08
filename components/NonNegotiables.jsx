@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { askForProof } from "@/lib/proof";
 import Icon from "./Icon";
 import { supabase } from "@/lib/supabase";
 import { weekDates, todayStr } from "@/lib/dates";
@@ -39,6 +40,9 @@ export default function NonNegotiables({ uid, date = todayStr(), onChange, onLis
     setWeek({ ...week, [date]: next });
     const ok = await patchJournal(uid, date, { nn: next });
     if (!ok) showToast("Couldn't save — check your connection");
+    // that tap completed the whole list → you're locked in, prove it
+    if (next[id] && list.length > 0 && list.every((i) => next[i.id]))
+      askForProof("nn", { title: "Every non-negotiable done — you're locked in", subtitle: "Snap a shot to prove it to your friends.", stamp: "Locked in" });
     onChange?.(next);
   }
 
