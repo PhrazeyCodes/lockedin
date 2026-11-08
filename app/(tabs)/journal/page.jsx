@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
 import { markJournalDone, loadDay, saveDay } from "@/lib/store";
+import { askForProof } from "@/lib/proof";
 import { todayStr } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import HistoryCalendar from "@/components/HistoryCalendar";
@@ -89,6 +90,7 @@ export default function Journal() {
     showToast("Journal saved");
     await refresh();
     closeEditor();
+    if (target === date) askForProof("journal", { title: "Journal done — snap your setup?", subtitle: "Desk, coffee, sunrise — show you started the day right.", stamp: "Journal" });
   }
 
   async function saveSleep(sleep) {
