@@ -1,9 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { askForProof } from "@/lib/proof";
 import Link from "next/link";
 import { useUser } from "@/lib/useUser";
-import { loadDay, saveDay, syncFeed, mealTotals, targetsFor, isRestDay, foodStreak, pushRecent, blankDay } from "@/lib/store";
+import { loadDay, saveDay, syncFeed, mealTotals, targetsFor, isRestDay, foodStreak, pushRecent, blankDay, saveDaySoon, readCache } from "@/lib/store";
 import { todayStr, addDays, fmtDate, weekDates } from "@/lib/dates";
 import Rings from "@/components/Rings";
 import Logger from "@/components/Logger";
@@ -23,6 +23,7 @@ import { showToast } from "@/components/Toast";
 export default function Home() {
   const { user, profile, loading } = useUser();
   const [date, setDate] = useState(todayStr());
+  const editedRef = useRef(false); // set once you change anything on this day
   const [day, setDay] = useState(blankDay());
   const [streak, setStreak] = useState(0);
   const [weekMarks, setWeekMarks] = useState({});
@@ -38,7 +39,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-    loadDay(user.id, date).then(setDay);
+    // show the on-device copy instantly, then the server copy — unless you've already started editing
+    editedRef.current = false;
+    const cached = readCache(user.id, date);
+    if (cached) setDay(cached);
+    loadDay(user.id, date).then((d) => { if (!editedRef.current) setDay(d); });
   }, [user, date]);
 
   useEffect(() => {
@@ -102,7 +107,8 @@ export default function Home() {
   const update = useCallback((mutate) => {
     setDay((prev) => {
       const next = mutate(structuredClone(prev));
-      saveDay(user.id, date, next).then(() => syncFeed(user.id, date, next, profile));
+      saveDaySoon(user.id, date, next, profile);
+      editedRef.current = true;
       return next;
     });
   }, [user, date, profile]);
