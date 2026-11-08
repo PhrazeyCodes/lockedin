@@ -5,6 +5,8 @@ import { useUser } from "@/lib/useUser";
 import { supabase } from "@/lib/supabase";
 import { getUserApiKey, setUserApiKey } from "@/lib/nutrition";
 import { showToast } from "@/components/Toast";
+import Icon from "@/components/Icon";
+import { PROOF_KINDS, getProofPrefs, setProofPrefs, cacheProofPrefsFromAccount } from "@/lib/proof";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -40,6 +42,20 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState("");
   const [keySaved, setKeySaved] = useState(false);
   const router = useRouter();
+  const [proof, setProof] = useState({});
+
+  useEffect(() => {
+    if (!user) return;
+    cacheProofPrefsFromAccount(user.user_metadata);
+    setProof(getProofPrefs());
+  }, [user]);
+
+  async function toggleProof(k) {
+    const next = { ...proof, [k]: !proof[k] };
+    setProof(next);
+    const ok = await setProofPrefs(next);
+    if (!ok) showToast("Saved on this device only — couldn't sync");
+  }
 
   useEffect(() => {
     if (!profile) return;
@@ -116,6 +132,22 @@ export default function Settings() {
             </button>
           )}
         </div>
+      </div>
+      <div className="card">
+        <h3 className="font-bold">Proof shots</h3>
+        <p className="mb-2 text-[12px] text-gray-500">
+          After you log these, LockedIn asks for a quick photo to post to your friends' feed. At most once a day each.
+        </p>
+        {Object.entries(PROOF_KINDS).map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between border-t border-gray-50 py-2.5">
+            <span className="flex items-center gap-2 text-sm"><Icon name={v.icon} className="h-4 w-4 text-gray-400" />{v.label}</span>
+            <button type="button" role="switch" aria-checked={!!proof[k]} aria-label={`Ask after ${v.label}`}
+              onClick={() => toggleProof(k)}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition ${proof[k] ? "bg-lock-light" : "bg-gray-200"}`}>
+              <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${proof[k] ? "left-[1.4rem]" : "left-0.5"}`} />
+            </button>
+          </div>
+        ))}
       </div>
       <button className="btn-primary w-full" onClick={save}>{saved ? "Saved" : "Save"}</button>
       <button className="btn-ghost w-full text-red-500"
