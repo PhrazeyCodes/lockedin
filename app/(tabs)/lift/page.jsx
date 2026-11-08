@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
+import { askForProof } from "@/lib/proof";
 
 const SESSIONS = {
   Push: "#dc2626", Pull: "#2563eb", Legs: "#7c3aed", "Shoulders & Arms": "#f59e0b", Rest: "#64748b",
@@ -402,7 +403,12 @@ export default function Lift() {
                       onChange={(e) => update((d) => { d.lift.exercises[ei].sets[si].r = e.target.value; return d; })} />
                     <button
                       className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 ${s.done ? "animate-pop border-lock-light bg-lock-light text-white" : "border-gray-200"}`}
-                      onClick={() => update((d) => { d.lift.exercises[ei].sets[si].done = !s.done; return d; })}>
+                      onClick={() => {
+                        update((d) => { d.lift.exercises[ei].sets[si].done = !s.done; return d; });
+                        // that tap finished the last set → ask for a proof shot
+                        if (!s.done && doneSets + 1 === totalSets && date === todayStr())
+                          askForProof("lift", { title: `${lift.type} day done — show the pump?`, stamp: lift.type });
+                      }}>
                       <Icon name="check" className="h-4 w-4" strokeWidth={2.6} />
                     </button>
                     <button aria-label="Delete set"
@@ -493,7 +499,12 @@ export default function Lift() {
       </div>
 
       <RunSheet open={runOpen} onClose={() => setRunOpen(false)} uid={user?.id} date={date}
-        onSave={(run) => { update((d) => { d.runs = [...(d.runs || []), run]; return d; }); setRunOpen(false); showToast("Run logged"); }} />
+        onSave={(run) => {
+          update((d) => { d.runs = [...(d.runs || []), run]; return d; });
+          setRunOpen(false); showToast("Run logged");
+          if (!run.photo_paths?.length && date === todayStr())
+            askForProof("run", { title: `${run.distance} ${run.unit} logged — snap your watch or route?`, stamp: `${run.distance} ${run.unit} run` });
+        }} />
 
       <Sheet open={pickerOpen} onClose={() => setPickerOpen(false)} title="What did you train?">
         <div className="grid grid-cols-2 gap-2">
