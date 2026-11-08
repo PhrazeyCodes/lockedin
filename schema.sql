@@ -185,3 +185,15 @@ create policy "checkin photos own" on storage.objects for all
 
 create policy "checkin photos friends" on storage.objects for select
   using (bucket_id = 'checkins' and are_friends(auth.uid(), ((storage.foldername(name))[1])::uuid));
+
+-- ============ SPEED INDEXES ============
+-- Safe to re-run: only adds indexes, never changes data.
+create index if not exists reactions_event_idx on public.reactions (event_id);
+do $$ begin
+  if to_regclass('public.likes') is not null then
+    create index if not exists likes_event_idx on public.likes (event_id);
+  end if;
+end $$;
+create index if not exists feed_events_user_created_idx on public.feed_events (user_id, created_at desc);
+create index if not exists friendships_user_b_idx on public.friendships (user_b);
+create index if not exists nudges_to_date_idx on public.nudges (to_user, date);
