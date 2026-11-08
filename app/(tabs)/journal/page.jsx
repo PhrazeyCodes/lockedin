@@ -88,8 +88,8 @@ export default function Journal() {
     if (error) { showToast("Couldn't save — try again"); return; }
     if (target === date) await markJournalDone(user.id, date); // friends only see "journaled today"
     showToast("Journal saved");
-    await refresh();
     closeEditor();
+    refresh(); // reload in the background — no waiting on the editor
     if (target === date) askForProof("journal", { title: "Journal done — snap your setup?", subtitle: "Desk, coffee, sunrise — show you started the day right.", stamp: "Journal" });
   }
 
@@ -97,8 +97,8 @@ export default function Journal() {
     const ok = await patchJournal(user.id, target, { sleep });
     if (!ok) { showToast("Couldn't save — try again"); return; }
     showToast("Sleep saved");
-    await refresh();
     closeEditor();
+    refresh();
   }
 
   // From the day view: open an editor for that day
