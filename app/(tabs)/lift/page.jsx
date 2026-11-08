@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
 import HistoryCalendar from "@/components/HistoryCalendar";
 import Icon from "@/components/Icon";
-import { askForProof } from "@/lib/proof";
+import { askForProof, uploadPhoto } from "@/lib/proof";
 
 const SESSIONS = {
   Push: "#dc2626", Pull: "#2563eb", Legs: "#7c3aed", "Shoulders & Arms": "#f59e0b", Rest: "#64748b",
@@ -139,7 +139,7 @@ function RunSheet({ open, onClose, uid, date, onSave }) {
       const photo_paths = [];
       for (const [i, f] of files.entries()) {
         const path = `${uid}/runs/${date}-${Date.now()}-${i}.jpg`;
-        const { error: upErr } = await supabase.storage.from("checkins").upload(path, f, { upsert: true });
+        const { error: upErr } = await uploadPhoto(path, f);
         if (upErr) throw upErr;
         photo_paths.push(path);
       }
