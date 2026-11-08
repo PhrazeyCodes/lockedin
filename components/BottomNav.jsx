@@ -15,6 +15,8 @@ const TABS = [
   { href: "/social", label: "Social", icon: "users" },
 ];
 
+let lastUnreadCheck = 0, lastUnread = 0; // shared across tab switches
+
 export default function BottomNav() {
   const path = usePathname();
   const { user } = useUser();
@@ -24,7 +26,10 @@ export default function BottomNav() {
   // so it stays current as you move around the app.
   useEffect(() => {
     if (!user) return;
-    if (path.startsWith("/social")) { setUnread(0); return; }
+    if (path.startsWith("/social")) { setUnread(0); lastUnread = 0; return; }
+    // at most one check a minute — not two queries on every tab switch
+    if (Date.now() - lastUnreadCheck < 60_000) { setUnread(lastUnread); return; }
+    lastUnreadCheck = Date.now();
     (async () => {
       const lastSeen = localStorage.getItem(SOCIAL_SEEN_KEY);
       if (!lastSeen) { localStorage.setItem(SOCIAL_SEEN_KEY, new Date().toISOString()); return; }
@@ -36,7 +41,8 @@ export default function BottomNav() {
       const { count } = await supabase.from("feed_events")
         .select("id", { count: "exact", head: true })
         .in("user_id", friendIds).gt("created_at", lastSeen);
-      setUnread(count || 0);
+      lastUnread = count || 0;
+      setUnread(lastUnread);
     })();
   }, [user, path]);
 
