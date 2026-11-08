@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/useUser";
-import { loadDay, saveDay, syncFeed, blankDay } from "@/lib/store";
+import { loadDay, saveDay, syncFeed, blankDay, saveDaySoon, readCache } from "@/lib/store";
 import { todayStr, fmtDate, weekDates } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import { supabase } from "@/lib/supabase";
@@ -195,6 +195,7 @@ function RunSheet({ open, onClose, uid, date, onSave }) {
 export default function Lift() {
   const { user, profile, loading } = useUser();
   const [date, setDate] = useState(todayStr());
+  const editedRef = useRef(false); // set once you change anything on this day
   const [day, setDay] = useState(blankDay());
   const [week, setWeek] = useState({});
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -283,7 +284,11 @@ export default function Lift() {
 
   useEffect(() => {
     if (!user) return;
-    loadDay(user.id, date).then(setDay);
+    // show the on-device copy instantly, then the server copy — unless you've already started editing
+    editedRef.current = false;
+    const cached = readCache(user.id, date);
+    if (cached) setDay(cached);
+    loadDay(user.id, date).then((d) => { if (!editedRef.current) setDay(d); });
   }, [user, date]);
 
   useEffect(() => {
@@ -295,12 +300,13 @@ export default function Lift() {
         for (const r of data || []) if (r.lift?.type) w[r.date] = r.lift.type;
         setWeek(w);
       });
-  }, [user, day.lift]);
+  }, [user, day.lift?.type]); // only when the session type changes, not on every set edit
 
   const update = useCallback((mutate) => {
     setDay((prev) => {
       const next = mutate(structuredClone(prev));
-      saveDay(user.id, date, next).then(() => syncFeed(user.id, date, next, profile));
+      saveDaySoon(user.id, date, next, profile);
+      editedRef.current = true;
       return next;
     });
   }, [user, date, profile]);
