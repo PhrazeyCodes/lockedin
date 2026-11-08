@@ -5,6 +5,13 @@ import { loadMonth } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { todayStr } from "@/lib/dates";
 
+// Last real day of a "YYYY-MM" month (Sept has 30, Feb 28/29…). Asking for "-31" in a
+// shorter month is an invalid date, which made the whole query fail and the month look empty.
+function monthEnd(yyyymm) {
+  const [y, m] = yyyymm.split("-").map(Number);
+  return `${yyyymm}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+}
+
 // Month view with dot markers. source="days": amber = food, red = lift, green = habits.
 // source="journal": purple = journal entry that day.
 export default function HistoryCalendar({ open, onClose, uid, onPick, source = "days" }) {
@@ -15,7 +22,7 @@ export default function HistoryCalendar({ open, onClose, uid, onPick, source = "
     if (!open || !uid) return;
     if (source === "journal") {
       supabase.from("journal").select("date, am, pm")
-        .eq("user_id", uid).gte("date", `${month}-01`).lte("date", `${month}-31`)
+        .eq("user_id", uid).gte("date", `${month}-01`).lte("date", monthEnd(month))
         .then(({ data }) => {
           const m = {};
           for (const r of data || []) m[r.date] = { journal: !!(r.am || r.pm) };
