@@ -1,4 +1,5 @@
 import "./globals.css";
+import RegisterSW from "@/components/RegisterSW";
 
 export const metadata = {
   title: "LockedIn",
@@ -25,6 +26,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <div className="mx-auto max-w-md min-h-screen">{children}</div>
+        <RegisterSW />
       </body>
     </html>
   );
