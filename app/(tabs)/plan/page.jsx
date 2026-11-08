@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/useUser";
-import { loadDay, saveDay, syncFeed, blankDay } from "@/lib/store";
+import { loadDay, saveDay, syncFeed, blankDay, saveDaySoon, readCache } from "@/lib/store";
 import { todayStr, addDays, fmtDate } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import HistoryCalendar from "@/components/HistoryCalendar";
@@ -23,6 +23,7 @@ function saveTemplates(t) { localStorage.setItem(TPL_KEY, JSON.stringify(t)); }
 export default function Plan() {
   const { user, profile, loading } = useUser();
   const [seg, setSeg] = useState("schedule");
+  const editedRef = useRef(false); // set once you change anything on this day
   // Deep link from Home: /plan?tab=tasks
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "tasks") {
@@ -39,6 +40,9 @@ export default function Plan() {
 
   useEffect(() => {
     if (!user) return;
+    editedRef.current = false;
+    const cached = readCache(user.id, date);
+    if (cached) setDay(cached); // instant, then the server copy below
     loadDay(user.id, date).then(async (d) => {
       // auto-apply repeating template on an empty day
       if (!d.blocks?.length) {
@@ -54,6 +58,7 @@ export default function Plan() {
         if (carried.length) d = { ...d, tasks: [...carried, ...(d.tasks || [])] };
         d.carryDone = true;
       }
+      if (editedRef.current) return; // you've started editing — don't overwrite it
       setDay(d);
       saveDay(user.id, date, d);
     });
@@ -69,7 +74,8 @@ export default function Plan() {
   const update = useCallback((mutate) => {
     setDay((prev) => {
       const next = mutate(structuredClone(prev));
-      saveDay(user.id, date, next).then(() => syncFeed(user.id, date, next, profile));
+      saveDaySoon(user.id, date, next, profile);
+      editedRef.current = true;
       return next;
     });
   }, [user, date, profile]);
